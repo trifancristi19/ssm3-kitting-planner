@@ -1,0 +1,10 @@
+{
+  "positions": {
+    "home": "HOME",
+    "bins": ["BIN_1", "BIN_2", "BIN_3"],
+    "slots": ["SLOT_1", "SLOT_2", "SLOT_3", "SLOT_4"],
+    "return": "RETURN"
+  },
+  "parts": {"BOLT": "BIN_1", "SPACER_SHORT": "BIN_2", "SPACER_LONG": "BIN_3"},
+  "limits": {"parts_per_slot": 1, "parts_in_gripper": 1}
+}

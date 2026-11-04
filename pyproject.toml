@@ -1,0 +1,23 @@
+[project]
+name = "ssm3-kitting-planner"
+version = "0.1.0"
+description = "LLM-guided planning for order-based kitting with kit correction in a simulated cell (SSM3, NHL Stenden)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Ported from Study 1 as it was run. Its prompts and task lines stay unchanged.
+"study1/tasks.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = "-ra"
