@@ -225,6 +225,13 @@ def test_place_blocked_when_gripper_does_not_hold_the_part(cell):
     assert cell.state() == before
 
 
+def test_place_blocked_when_gripper_is_empty_and_part_is_none(cell):
+    move_to(cell, "SLOT_4")
+    before = cell.state()
+    assert place(cell, None, "SLOT_4").status == "blocked"
+    assert cell.state() == before
+
+
 def test_place_blocked_when_arm_is_not_at_slot(cell):
     _hold(cell, "SPACER_LONG", "BIN_3")
     before = cell.state()
@@ -267,6 +274,10 @@ def test_locate_not_found_and_does_not_change_state(cell):
     assert result.status == "not found"
     assert result.locations == ()
     assert cell.state() == before
+
+
+def test_locate_none_with_an_empty_gripper_is_not_found(cell):
+    assert locate(cell, None).status == "not found"
 
 
 # Step results and stubs

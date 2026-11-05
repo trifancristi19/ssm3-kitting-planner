@@ -20,10 +20,16 @@ from dataclasses import dataclass
 # The statuses come from the feedback design of 30 September 2026 (Chapter 5).
 STATUSES = ("success", "failed", "blocked", "not found")
 
+# Not a position in the capability file: raise at the design review.
+GRIPPER = "GRIPPER"
+
 
 @dataclass(frozen=True)
 class StepResult:
-    """The result of one step: a status, a plain message and the new cell state."""
+    """The result of one step: a status, a plain message and the new cell state.
+
+    Table 7 also lists a step number. The orchestrator adds it, because it owns the numbering.
+    """
 
     status: str
     message: str
@@ -83,7 +89,7 @@ def place(cell, part, slot):
     if not (cell.is_slot(slot) or cell.is_return(slot)):
         return _result(cell, "blocked", f"{slot} is not a tray slot or the return position")
     # Local choice, not in Table 6: raise at the design review.
-    if state["gripper"] != part:
+    if state["gripper"] is None or state["gripper"] != part:
         return _result(cell, "blocked", f"The gripper does not hold {part}")
     # Local choice, not in Table 6: raise at the design review.
     if state["arm"] != slot:
@@ -102,8 +108,8 @@ def locate(cell, part):
         found += [name for name, parts in state[group].items() if part in parts]
     if part in state["return"]:
         found.append(cell.capability["positions"]["return"])
-    if state["gripper"] == part:
-        found.append("GRIPPER")
+    if state["gripper"] is not None and state["gripper"] == part:
+        found.append(GRIPPER)
     if not found:
         return _result(cell, "not found", f"{part} is not in the cell")
     return _result(cell, "success", f"{part} is at {', '.join(found)}", found)
