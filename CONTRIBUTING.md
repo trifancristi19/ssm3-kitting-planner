@@ -7,8 +7,8 @@ These rules keep `develop` and `main` working for the whole team. They apply to 
 1. Nobody can push directly to `develop` or `main`. GitHub blocks it. Every change reaches `develop` through a pull request.
 2. One branch per task. Name it after the task, for example `checker-protected-slots`.
 3. Pull before you start, and start each branch from an up-to-date `develop`, never from `main`.
-4. Every pull request goes into `develop`, never straight into `main`.
-5. Every pull request needs one review by another team member and a green CI run before it is merged.
+4. Every task pull request goes into `develop`. Only a release pull request goes into `main` (see Releases to main).
+5. Every pull request needs one review by another team member and a green CI run before it is merged. If new commits are pushed after the approval, ask the reviewer to look again, because GitHub keeps the approval.
 6. A pull request into `develop` is merged with a squash merge. GitHub allows only that there.
 7. Never commit an API key, password or token. Keys stay in environment variables or a local `.env` file.
 
@@ -35,7 +35,7 @@ These rules keep `develop` and `main` working for the whole team. They apply to 
    ```
    git push -u origin your-task-name
    ```
-6. Ask a team member to review. Merge only after one approval and a green CI run, using squash merge, then delete the branch.
+6. Ask a team member to review. Merge only after one approval and a green CI run, using squash merge. GitHub then deletes the branch.
 
 ## Releases to main
 
