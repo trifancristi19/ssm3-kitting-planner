@@ -1,10 +1,12 @@
-# Lint and test on every push and pull request.
+# Lint and test every pull request, and every push to develop and main.
+# Task branches are checked through their pull request, so each change runs once, not twice.
 # This workflow never calls an LLM and needs no API keys or other secrets.
 # The tests also block all network access (tests/conftest.py).
 name: CI
 
 on:
   push:
+    branches: [develop, main]
   pull_request:
 
 permissions:
