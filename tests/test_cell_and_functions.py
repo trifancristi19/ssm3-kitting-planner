@@ -424,3 +424,11 @@ def test_chapter_6_plan_without_a_level_still_runs(cell, chapter6_plan):
     results = run_plan(cell, old_plan)
     assert all(result.status == "success" for result in results)
     assert cell.state()["slots"]["SLOT_2"] == ["SPACER_LONG"]
+
+
+@pytest.mark.parametrize("count", [0, 3, "2", True])
+def test_unsupported_levels_per_slot_is_an_error(capability, count):
+    # Only a base and a top are defined (DD18), so a capability file with another number fails early.
+    capability["limits"]["levels_per_slot"] = count
+    with pytest.raises(ValueError, match="levels_per_slot"):
+        SimulatedCell(capability, empty_state(capability))

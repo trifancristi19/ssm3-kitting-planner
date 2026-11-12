@@ -24,6 +24,17 @@ FAILURE_KINDS = ("move_part", "pick_failure")
 LEVELS = ("base", "top")
 
 
+def level_names(capability):
+    """Return the level names of a tray slot, from the base up (levels_per_slot, DD18).
+
+    Only a base and a top are defined, so levels_per_slot must be 1 or 2.
+    """
+    count = capability["limits"]["levels_per_slot"]
+    if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= len(LEVELS):
+        raise ValueError(f"levels_per_slot is {count!r}, but only these levels are defined: {', '.join(LEVELS)}")
+    return LEVELS[:count]
+
+
 def empty_state(capability):
     """Build an empty cell state: nothing anywhere, gripper empty, arm at home."""
     positions = capability["positions"]
@@ -40,6 +51,7 @@ class SimulatedCell:
     """The cell state and its changes. Only the function library changes it."""
 
     def __init__(self, capability, state):
+        level_names(capability)  # a capability file with an unsupported number of levels fails here
         self.capability = capability
         self._state = copy.deepcopy(state)
         self._pick_failure_pending = False
@@ -66,7 +78,7 @@ class SimulatedCell:
 
     def levels(self):
         """Return the level names a tray slot has, from the base up (levels_per_slot, DD18)."""
-        return LEVELS[: self.capability["limits"]["levels_per_slot"]]
+        return level_names(self.capability)
 
     # Contents of places
 

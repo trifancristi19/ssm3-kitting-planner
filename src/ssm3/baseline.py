@@ -11,7 +11,7 @@ parts of each slot from the base up (the same lists as the cell state) and the
 protected slots. The recipe table waits for the list of kits (OD11).
 """
 
-from ssm3.cell import LEVELS
+from ssm3.cell import level_names
 
 
 def plan_from_recipe(kit_id):
@@ -32,10 +32,20 @@ def plan_from_layout(order, state, capability):
     and the new parts come from their bins (Chapter 11). A top part is removed
     before its base, and a base is placed before its top (DD19). When only the
     base changes, the top part still comes off first and a new one comes from its
-    bin. Returns the planner response format of Chapter 6, {"plan": [...]}.
+    bin. Returns the planner response format of Chapter 6, {"plan": [...]}. A slot
+    or part the capability file does not know, or more parts than levels, raises
+    ValueError.
     """
     positions = capability["positions"]
-    levels_per_slot = capability["limits"]["levels_per_slot"]
+    levels = level_names(capability)
+    for slot, target in order["target"].items():
+        if slot not in positions["slots"]:
+            raise ValueError(f"{slot} is not a tray slot in the capability file")
+        if len(target) > len(levels):
+            raise ValueError(f"{slot} has {len(levels)} levels, the target names {len(target)} parts")
+        for part in target:
+            if part not in capability["parts"]:
+                raise ValueError(f"{part} in the target of {slot} is not a part in the capability file")
     protected = set(order.get("protected", ()))
     plan = []
     for slot in positions["slots"]:
@@ -43,8 +53,6 @@ def plan_from_layout(order, state, capability):
             continue
         current = list(state["slots"][slot])
         target = list(order["target"][slot])
-        if len(target) > levels_per_slot:
-            raise ValueError(f"{slot} has {levels_per_slot} levels, the target names {len(target)} parts")
         keep = 0
         while keep < min(len(current), len(target)) and current[keep] == target[keep]:
             keep += 1
@@ -61,7 +69,7 @@ def plan_from_layout(order, state, capability):
                 _step("move_to", position=source),
                 _step("pick", part=part, source=source),
                 _step("move_to", position=slot),
-                _step("place", part=part, slot=slot, level=LEVELS[index]),
+                _step("place", part=part, slot=slot, level=levels[index]),
             ]
     if plan:
         plan.append(_step("move_to", position=positions["home"]))

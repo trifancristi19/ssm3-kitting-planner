@@ -93,3 +93,16 @@ def test_more_parts_than_levels_is_an_error(cell):
 def test_recipe_table_is_still_a_stub():
     with pytest.raises(NotImplementedError):
         baseline.plan_from_recipe("KIT_A")
+
+
+def test_a_slot_the_capability_file_does_not_know_is_an_error(cell):
+    # A typo such as SLOT_9 used to give an empty plan (review of pull request 5).
+    order = {"order_id": "K-24", "target": {"SLOT_9": ["BOLT"]}}
+    with pytest.raises(ValueError, match="SLOT_9"):
+        plan_from_layout(order, cell.state(), cell.capability)
+
+
+def test_a_part_the_capability_file_does_not_know_is_an_error(cell):
+    order = {"order_id": "K-25", "target": {"SLOT_4": ["SPACER_GOLD"]}}
+    with pytest.raises(ValueError, match="SPACER_GOLD"):
+        plan_from_layout(order, cell.state(), cell.capability)
