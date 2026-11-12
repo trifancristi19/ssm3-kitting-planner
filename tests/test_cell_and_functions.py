@@ -6,6 +6,7 @@ import pytest
 
 from ssm3 import functions
 from ssm3.cell import SimulatedCell, empty_state
+from ssm3.console import ScriptedOperator
 from ssm3.functions import STATUSES, StepResult, locate, move_to, pick, place
 
 # Cell
@@ -270,9 +271,10 @@ def test_result_state_is_a_copy(cell):
     assert cell.state()["arm"] == "BIN_1"
 
 
-def test_ask_operator_is_still_a_stub():
-    with pytest.raises(NotImplementedError):
-        functions.ask_operator("Which slot?")
+def test_ask_operator_passes_the_question_to_the_operator():
+    operator = ScriptedOperator(["SLOT_2"])
+    assert functions.ask_operator("Which slot?", operator) == "SLOT_2"
+    assert operator.questions == ["Which slot?"]
 
 
 # Chapter 13 worked example
