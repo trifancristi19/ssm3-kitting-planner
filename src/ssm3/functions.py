@@ -7,7 +7,7 @@ state (Table 7), so the planner never decides by itself whether an action worked
 
 move_to, pick, place and locate work on the simulated cell. A failed or blocked
 call never changes the state. ask_operator is only called by the orchestrator,
-never inside a plan (DD11), and is still a stub.
+never inside a plan (DD11). It passes the question to the operator of the console.
 
 The preconditions of each function live in one place, the *_problem functions
 below. The function turns a problem into a status of Table 6, and the checker
@@ -181,6 +181,9 @@ def locate(cell, part):
     return _result(cell, "success", f"{part} is at {', '.join(found)}", found)
 
 
-def ask_operator(question):
-    """Ask the operator a plain-text question and return the answer (DD11, Chapter 9)."""
-    raise NotImplementedError("ask_operator, see Design Document Table 6 and DD11")
+def ask_operator(question, operator):
+    """Ask the operator a plain-text question and return the answer (DD11, Chapter 9).
+
+    operator is a console operator (console.py). Only the orchestrator calls this.
+    """
+    return operator.ask(question)
