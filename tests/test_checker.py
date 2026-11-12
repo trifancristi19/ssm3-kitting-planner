@@ -213,3 +213,30 @@ def test_variation_part_on_top(cell):
     top_part_first = (remove("BOLT", "SLOT_2") + remove("SPACER_SHORT", "SLOT_2")
                       + add("SPACER_LONG", "BIN_3", "SLOT_2", "base") + [step("move_to", position="HOME")])
     assert check(top_part_first, state, cell.capability, protected=PROTECTED)["verdict"] == "run"
+
+
+# BAD_POSITION, agreed by the team for a known position of the wrong kind (Table 9, Arguments, proposal)
+
+def test_bad_position_for_a_pick_from_the_return_position(cell):
+    state = cell.state()
+    state["return"] = ["BOLT"]
+    plan = [step("move_to", position="RETURN"), step("pick", part="BOLT", source="RETURN")]
+    result = check(plan, state, cell.capability)
+    assert (result["verdict"], result["step"], result["code"]) == ("reject", 2, "BAD_POSITION")
+
+
+def test_bad_position_for_a_place_into_a_bin(cell):
+    plan = add("SPACER_LONG", "BIN_3", "SLOT_4", "base")[:2] + [step("place", part="SPACER_LONG", slot="BIN_3")]
+    result = check(plan, cell.state(), cell.capability)
+    assert (result["step"], result["code"]) == (3, "BAD_POSITION")
+
+
+def test_bad_position_for_a_pick_from_home(cell):
+    assert check([step("pick", part="BOLT", source="HOME")], cell.state(), cell.capability)["code"] == "BAD_POSITION"
+
+
+def test_a_place_with_the_wrong_part_in_the_gripper_names_both_parts(cell):
+    plan = add("SPACER_LONG", "BIN_3", "SLOT_4", "base")[:3] + [step("place", part="BOLT", slot="SLOT_4")]
+    result = check(plan, cell.state(), cell.capability)
+    assert result["code"] == "PART_MISSING"
+    assert "SPACER_LONG" in result["reason"] and "BOLT" in result["reason"]

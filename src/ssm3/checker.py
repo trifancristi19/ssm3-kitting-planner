@@ -6,7 +6,9 @@ reads the same capability file as the planner (DD5). The baseline's plans pass t
 same checks (DD4).
 
 This module checks the format, the functions, the arguments, the preconditions,
-the protected slots and the return_capacity limit of Table 9. The preconditions
+the protected slots and the return_capacity limit of Table 9. A known position of
+the wrong kind, such as a pick from the return position, gets BAD_POSITION, which
+the team agreed as a proposal for the Arguments row. The preconditions
 come from the function library itself (the *_problem functions), so the checker
 and the functions can never disagree. Several valid orders of placement are all
 accepted: a part on top before its base gets NO_BASE, and a pick of a covered base

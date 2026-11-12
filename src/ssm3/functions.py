@@ -54,6 +54,17 @@ def _result(cell, status, message, locations=()):
 
 # Preconditions, shared with the checker
 
+def _position_problem(cell, position, allowed, action):
+    """A known position of the wrong kind gets BAD_POSITION, an unknown one UNKNOWN_POSITION (Table 9, Arguments).
+
+    BAD_POSITION was agreed by the team for a pick from the return position and a place into a bin. The name is a
+    proposal until the design review.
+    """
+    if position in cell.positions():
+        return Problem("blocked", "BAD_POSITION", f"Cannot {action} {position}, only {allowed}")
+    return Problem("blocked", "UNKNOWN_POSITION", f"{position} is not a known position")
+
+
 def move_to_problem(cell, position):
     """The position exists (Table 6)."""
     if position not in cell.positions():
@@ -66,9 +77,8 @@ def pick_problem(cell, part, source):
     state = cell.state()
     if state["gripper"] is not None:
         return Problem("blocked", "GRIPPER_FULL", f"The gripper already holds {state['gripper']}")
-    # Local choice, not in Table 6 or Table 9: raise at the design review.
     if not (cell.is_bin(source) or cell.is_slot(source)):
-        return Problem("blocked", "UNKNOWN_POSITION", f"{source} is not a bin or a tray slot")
+        return _position_problem(cell, source, "a bin or a tray slot", "pick from")
     if state["arm"] != source:
         return Problem("blocked", "ARM_NOT_THERE", f"The arm is at {state['arm']}, not at {source}")
     if part not in cell.contents(source):
@@ -91,15 +101,16 @@ def level_problem(cell, slot, level):
 def place_problem(cell, part, slot, level=None):
     """Gripper holds the part, arm at the slot, level free, base before top, room in the return position (Table 6)."""
     state = cell.state()
-    # Local choice, not in Table 6 or Table 9: raise at the design review.
     if not (cell.is_slot(slot) or cell.is_return(slot)):
-        return Problem("blocked", "UNKNOWN_POSITION", f"{slot} is not a tray slot or the return position")
+        return _position_problem(cell, slot, "a tray slot or the return position", "place into")
     bad_level = level_problem(cell, slot, level)
     if bad_level:
         return bad_level
-    # Local choice, not in Table 6 or Table 9: raise at the design review.
-    if state["gripper"] is None or state["gripper"] != part:
-        return Problem("blocked", "PART_MISSING", f"The gripper does not hold {part}")
+    # The team agreed on PART_MISSING, with a reason that names both parts (proposal until the design review).
+    if state["gripper"] is None:
+        return Problem("blocked", "PART_MISSING", f"The gripper is empty, so it does not hold {part}")
+    if state["gripper"] != part:
+        return Problem("blocked", "PART_MISSING", f"The gripper holds {state['gripper']}, not {part}")
     if state["arm"] != slot:
         return Problem("blocked", "ARM_NOT_THERE", f"The arm is at {state['arm']}, not at {slot}")
     if cell.is_return(slot):
