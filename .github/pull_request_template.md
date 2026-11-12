@@ -6,7 +6,7 @@ One or two sentences.
 
 Chapter or table this follows:
 
-Open decisions (OD1 to OD11) this touches, if any:
+Open decisions (Design Document Table 14) this touches, if any:
 
 ## Checklist
 

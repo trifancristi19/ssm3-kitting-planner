@@ -18,13 +18,23 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      # The project allows Python 3.12 and newer (pyproject.toml), so the tests run on 3.12 and on 3.13.
+      # Both versions run in this one job, because the branch rules require a check named "test".
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install (3.12)
+        run: python -m pip install -r requirements.txt
+      - name: Pytest (3.12)
+        run: python -m pytest
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
-      - name: Install
+      - name: Install (3.13)
         run: python -m pip install -r requirements.txt
       - name: Ruff
         run: ruff check .
-      - name: Pytest
-        run: pytest
+      - name: Pytest (3.13)
+        run: python -m pytest
