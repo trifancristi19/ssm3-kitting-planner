@@ -37,6 +37,15 @@ def test_unknown_event_kinds_are_refused():
         RunLog("r").event("chat")
 
 
+@pytest.mark.parametrize("key", ["run_id", "seq", "time", "event"])
+def test_a_field_cannot_overwrite_the_keys_of_the_record(key):
+    # Review of pull request 7: a field called seq or time used to replace the record's own value.
+    log = RunLog("r")
+    with pytest.raises(ValueError, match=key):
+        log.event("feedback", **{key: "x"})
+    assert log.records == []
+
+
 def test_a_field_that_is_not_json_fails_early():
     log = RunLog("r")
     with pytest.raises(TypeError):
@@ -83,4 +92,4 @@ def test_the_terminal_operator_reads_and_writes_through_the_given_functions():
     operator = TerminalOperator(read=lambda prompt: shown.append(prompt) or "  slot 2 \n", write=shown.append)
     assert operator.ask("Which slot?") == "slot 2"
     operator.tell("Run stopped")
-    assert shown == ["Question from the planner: Which slot?\n> ", "Operator notice: Run stopped"]
+    assert shown == ["Operator question: Which slot?\n> ", "Operator notice: Run stopped"]

@@ -121,7 +121,13 @@ def test_history_is_only_shown_when_there_is_some(cell):
     assert "- Question: Which spacer? Operator answer: The long one." in prompt
     assert "- Your plan was rejected at step 4: SLOT_OCCUPIED" in prompt
     assert "- Step 1 move_to(position=SLOT_2): success, The arm is at SLOT_2" in prompt
+    assert "When the order is complete, answer with an empty plan." in prompt
     assert prompt.index("Earlier in this order:") < prompt.index("Answer only with JSON")
+
+
+def test_the_answer_format_says_how_to_end_an_order(cell):
+    prompt = build_prompt(ORDER, cell.state(), cell.capability)
+    assert '{"plan": []}   when the order is complete and nothing is left to do' in prompt
 
 
 def test_the_names_only_variant_hides_inputs_and_preconditions(cell):

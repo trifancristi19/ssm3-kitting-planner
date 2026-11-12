@@ -50,6 +50,7 @@ FUNCTIONS_NAMES = """Functions: move_to, pick, place, locate."""
 
 ANSWER_FORMAT = """Answer only with JSON in exactly one of these forms, nothing else:
 {"plan": [{"function": "move_to", "args": {"position": "SLOT_2"}}, ...]}   when you can do the order safely
+{"plan": []}   when the order is complete and nothing is left to do
 {"ask": "your question to the operator"}   when the order is unclear
 {"refuse": "short reason"}   when the order is impossible or not allowed"""
 
@@ -108,7 +109,8 @@ def _history_text(history):
             lines.append(f"- Step {event['step']} {call}: {event['status']}, {event['message']}")
         else:
             raise ValueError(f"unknown history event {kind!r}")
-    lines.append("Plan only the steps that are still needed, starting from the current state.")
+    lines.append("Plan only the steps that are still needed, starting from the current state. "
+                 "When the order is complete, answer with an empty plan.")
     return "\n".join(lines)
 
 

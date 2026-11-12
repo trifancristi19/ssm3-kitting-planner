@@ -42,7 +42,8 @@ class TerminalOperator:
         self._write = write
 
     def ask(self, question):
-        return self._read(f"Question from the planner: {question}\n> ").strip()
+        # The question can come from the planner or from the checker, so the text names neither.
+        return self._read(f"Operator question: {question}\n> ").strip()
 
     def tell(self, message):
         self._write(f"Operator notice: {message}")

@@ -20,11 +20,14 @@ The rules of the loop:
 - The open loop runs the whole checked plan and stops safely at a failed step
   (DD16). The closed loop runs the first step of every checked plan and then
   calls the planner again with the result and the new state (Table 8). It ends
-  when the last step of a checked plan succeeds.
+  only when the planner answers with an empty plan, which the prompt asks for
+  when the order is complete (proposal). So a planner that sends only the next
+  step each time still finishes the whole order.
 - The step budget is twice the number of steps of the expected plan, or max_steps
   from the capability file for an order without an expected plan (DD14, DD21).
-- After a provider error or rate limit a run is repeated at most three times and
-  then marked not run, so free-tier limits do not count as planner failures (DD21).
+- A provider error or rate limit is logged as a provider_limit event and ends the
+  attempt (DD14). The run is then repeated at most three times and marked not run
+  after that, so free-tier limits do not count as planner failures (DD21).
 
 Choices the Design Document does not settle are marked "proposal" below.
 """
@@ -166,8 +169,9 @@ class _Run:
                 self.log.event("feedback", kind="failure sent to the planner", step=self.steps_run,
                                status=result.status, message=result.message)
                 return None
-        if self.variant == "open loop" or len(plan) == 1:
+        if self.variant == "open loop":
             return self.finish("done", "the last step of the plan is done")
+        # The closed loop always asks the planner again, and ends only on an empty plan (proposal, OD14).
         return None
 
     def loop(self):
@@ -205,7 +209,7 @@ class _Run:
             self.rejects_in_a_row = 0
             self.waiting_for_a_valid_plan = False
             if not plan:
-                return self.finish("done", "the planner returned an empty plan, so nothing is left to do")
+                return self.finish("done", "the planner returned an empty plan, so the order is complete")
             finished = self.run_steps(plan)
             if finished:
                 return finished
@@ -225,7 +229,9 @@ def run_order(order, variant, *, planner, cell, operator, log, protected=(), exp
     the prompt version (Table 11).
 
     The summary holds the outcome ("done", "refused" or "stopped"), the reason, the
-    number of steps, planner calls and interventions, and the final state.
+    number of steps, planner calls and interventions, and the final state. A
+    ProviderLimit from the planner is logged as a provider_limit event and raised
+    again, so run_with_provider_repeats can repeat the run (DD14, DD21).
     """
     if variant not in VARIANTS:
         raise ValueError(f"unknown variant {variant!r}, expected one of {VARIANTS}")
@@ -233,4 +239,8 @@ def run_order(order, variant, *, planner, cell, operator, log, protected=(), exp
     log.event("run_start", order_id=order.get("order_id"), instruction=order["text"], variant=variant,
               protected=list(protected), step_budget=budget, **(info or {}))
     run = _Run(order, variant, planner, cell, operator, log, protected, budget, failures)
-    return run.loop()
+    try:
+        return run.loop()
+    except ProviderLimit as error:
+        log.event("provider_limit", reason=str(error), planner_calls=run.planner_calls, steps_run=run.steps_run)
+        raise

@@ -133,16 +133,38 @@ def test_open_loop_runs_the_chapter_6_plan(cell, chapter6_plan):
 
 
 def test_closed_loop_calls_the_planner_after_every_step(cell, chapter6_plan):
-    planner = FakePlanner(*[remaining(chapter6_plan)] * 9)
+    # Nine steps, then one more call that answers with an empty plan to end the run.
+    planner = FakePlanner(*[remaining(chapter6_plan)] * 10)
     summary, log, _ = run(cell, "closed loop", planner, expected_plan=chapter6_plan)
     assert summary["outcome"] == "done"
-    assert (summary["steps_run"], summary["planner_calls"]) == (9, 9)
-    assert [len(history) for history in planner.histories] == list(range(9))
+    assert (summary["steps_run"], summary["planner_calls"]) == (9, 10)
+    assert [len(history) for history in planner.histories] == list(range(10))
     assert summary["final_state"]["slots"]["SLOT_2"] == ["SPACER_LONG"]
 
 
+def test_closed_loop_with_a_planner_that_sends_only_the_next_step(cell, chapter6_plan):
+    # Review of pull request 7: a one-step plan used to end the run after the first step.
+    def next_step(history):
+        done = sum(1 for event in history if event["type"] == "step" and event["status"] == "success")
+        return plan(chapter6_plan[done:done + 1])
+
+    planner = FakePlanner(*[next_step] * 10)
+    summary, log, _ = run(cell, "closed loop", planner, expected_plan=chapter6_plan)
+    assert summary["outcome"] == "done"
+    assert (summary["steps_run"], summary["planner_calls"]) == (9, 10)
+    assert summary["final_state"]["slots"]["SLOT_2"] == ["SPACER_LONG"]
+    assert summary["final_state"]["return"] == ["SPACER_SHORT"]
+
+
+def test_closed_loop_does_not_end_after_a_successful_step(cell, chapter6_plan):
+    planner = FakePlanner(plan(chapter6_plan[:1]), plan([]))
+    summary, _, _ = run(cell, "closed loop", planner)
+    assert (summary["steps_run"], summary["planner_calls"]) == (1, 2)
+    assert summary["reason"] == "the planner returned an empty plan, so the order is complete"
+
+
 def test_closed_loop_recovers_from_a_failed_pick(cell, chapter6_plan):
-    planner = FakePlanner(*[remaining(chapter6_plan)] * 10)
+    planner = FakePlanner(*[remaining(chapter6_plan)] * 11)
     failures = {2: ("pick_failure", {})}
     summary, log, _ = run(cell, "closed loop", planner, expected_plan=chapter6_plan, failures=failures)
     assert summary["outcome"] == "done"
@@ -279,11 +301,18 @@ def test_a_provider_limit_repeats_the_whole_run_from_a_fresh_cell(cell, chapter6
             raise ProviderLimit("429 rate limit")
         return plan(chapter6_plan)
 
+    logs = []
+
     def one_run():
         fresh = SimulatedCell(cell.capability, cell.state())
+        logs.append(RunLog(f"K-17-attempt-{len(logs) + 1}"))
         return run_order(ORDER, "open loop", planner=planner, cell=fresh, operator=ScriptedOperator(),
-                         log=RunLog("K-17"), protected=PROTECTED)
+                         log=logs[-1], protected=PROTECTED)
 
     result = run_with_provider_repeats(one_run)
     assert (result["status"], result["attempts"]) == ("done", 2)
     assert result["result"]["outcome"] == "done"
+    # Review of pull request 7: the attempt that hit the limit leaves a provider_limit event (DD14).
+    assert [record["event"] for record in logs[0].records] == ["run_start", "provider_limit"]
+    assert logs[0].records[-1]["reason"] == "429 rate limit"
+    assert logs[1].of_kind("provider_limit") == []

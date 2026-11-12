@@ -9,8 +9,9 @@ kind, plus the fields of that event. The event kinds cover the rows of Table 11:
 run_start (task, instruction, variant, model, settings, prompt version),
 planner_response (every answer, with its time and token use), check_result,
 step_result, feedback (injected failures and what went back to the planner),
-intervention (clarification, approval or correction, with waiting time) and
-run_end (outcome and final tray).
+intervention (clarification, approval or correction, with waiting time),
+provider_limit (a provider error or rate limit, DD14) and run_end (outcome and
+final tray).
 """
 
 import json
@@ -25,8 +26,12 @@ EVENT_KINDS = (
     "step_result",
     "feedback",
     "intervention",
+    "provider_limit",
     "run_end",
 )
+
+# The keys every record sets itself. A field may not overwrite them.
+RECORD_KEYS = ("run_id", "seq", "time", "event")
 
 # Environment variables whose values are secrets. Their values are removed from every record.
 SECRET_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET")
@@ -65,6 +70,9 @@ class RunLog:
         """Log one event and return its record. A field may itself be called kind."""
         if kind not in EVENT_KINDS:
             raise ValueError(f"unknown event kind {kind!r}, expected one of {EVENT_KINDS}")
+        clash = sorted(set(fields) & set(RECORD_KEYS))
+        if clash:
+            raise ValueError(f"the field names {', '.join(clash)} are kept for the record itself")
         record = {
             "run_id": self.run_id,
             "seq": len(self.records) + 1,
