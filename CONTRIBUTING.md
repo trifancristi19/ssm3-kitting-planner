@@ -51,4 +51,4 @@ Use British spelling in comments, docstrings, documents and commit messages. Wri
 
 ## Design decisions
 
-The design is in the Design Document in the team's OneDrive folder. Do not build an answer to an open decision (Design Document Table 14, OD1 to OD11) before the team has decided it. If your task needs one, raise it in the team first.
+The design is in the Design Document in the team's OneDrive folder. Do not build an answer to an open decision (Design Document Table 14) before the team has decided it. If your task needs one, raise it in the team first. The decisions already taken are in Table 13.

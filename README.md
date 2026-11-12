@@ -29,7 +29,7 @@ tests/                           pytest tests
 
 ## Design Document
 
-The Design Document is not in this repository. It is in the team's shared OneDrive folder, under Project, DesignDocument. Every module docstring names the chapter it comes from.
+The Design Document is not in this repository. It is in the team's shared OneDrive folder, as `SSM3 Project/Project Documents/SSM3_Design_Document.docx`. Every module docstring names the chapter it comes from.
 
 ## Setup on Windows
 
