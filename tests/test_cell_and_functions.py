@@ -432,3 +432,21 @@ def test_unsupported_levels_per_slot_is_an_error(capability, count):
     capability["limits"]["levels_per_slot"] = count
     with pytest.raises(ValueError, match="levels_per_slot"):
         SimulatedCell(capability, empty_state(capability))
+
+
+def test_wrong_kind_and_unknown_positions_get_different_problems(cell):
+    from ssm3.functions import pick_problem, place_problem
+
+    assert pick_problem(cell, "BOLT", "RETURN").code == "BAD_POSITION"
+    assert pick_problem(cell, "BOLT", "NOWHERE").code == "UNKNOWN_POSITION"
+    _hold(cell, "SPACER_LONG", "BIN_3")
+    assert place_problem(cell, "SPACER_LONG", "BIN_1").code == "BAD_POSITION"
+    assert place_problem(cell, "SPACER_LONG", "NOWHERE").code == "UNKNOWN_POSITION"
+
+
+def test_place_reason_says_what_the_gripper_holds(cell):
+    move_to(cell, "SLOT_4")
+    assert place(cell, "BOLT", "SLOT_4").message == "The gripper is empty, so it does not hold BOLT"
+    _hold(cell, "SPACER_LONG", "BIN_3")
+    move_to(cell, "SLOT_4")
+    assert place(cell, "BOLT", "SLOT_4").message == "The gripper holds SPACER_LONG, not BOLT"

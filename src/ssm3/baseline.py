@@ -6,9 +6,10 @@ and its plans pass the same checker (DD4). Chapter 11 gives two forms, a recipe
 table and a layout comparison script (proposal).
 
 The layout comparison works. The fields of the work order file are still open
-(OD7), so the structured order it reads is a proposal: an order ID, the target
-parts of each slot from the base up (the same lists as the cell state) and the
-protected slots. The recipe table waits for the list of kits (OD11).
+(OD7), so the structured order it reads is a proposal: an order ID, the full
+target tray with the parts of every slot from the base up (the same lists as the
+cell state) and the protected slots. The team chose the full tray, as OD7
+proposes. The recipe table waits for the list of kits (OD11).
 """
 
 from ssm3.cell import level_names
@@ -27,17 +28,21 @@ def plan_from_layout(order, state, capability):
     """Compare a new part-to-slot mapping with the tray and return a plan.
 
     order is {"order_id": ..., "target": {slot: [base part, top part]}, "protected": [slots]}
-    (proposal, OD7). A slot the target does not name stays as it is. For every
+    (proposal, OD7). The target names every slot of the tray. For every
     changed slot that is not protected, the old parts go to the return position
     and the new parts come from their bins (Chapter 11). A top part is removed
     before its base, and a base is placed before its top (DD19). When only the
     base changes, the top part still comes off first and a new one comes from its
-    bin. Returns the planner response format of Chapter 6, {"plan": [...]}. A slot
-    or part the capability file does not know, or more parts than levels, raises
+    bin, so every bin needs a spare part. Returns the planner response format of
+    Chapter 6, {"plan": [...]}. A slot that is missing from the target, a slot or
+    part the capability file does not know, or more parts than levels raises
     ValueError.
     """
     positions = capability["positions"]
     levels = level_names(capability)
+    missing = [slot for slot in positions["slots"] if slot not in order["target"]]
+    if missing:
+        raise ValueError(f"The target tray does not name {', '.join(missing)}, it must name every slot")
     for slot, target in order["target"].items():
         if slot not in positions["slots"]:
             raise ValueError(f"{slot} is not a tray slot in the capability file")
@@ -49,7 +54,7 @@ def plan_from_layout(order, state, capability):
     protected = set(order.get("protected", ()))
     plan = []
     for slot in positions["slots"]:
-        if slot not in order["target"] or slot in protected:
+        if slot in protected:
             continue
         current = list(state["slots"][slot])
         target = list(order["target"][slot])
