@@ -6,7 +6,7 @@ The system plans order-based kitting with kit correction in a simulated tabletop
 
 ## Status
 
-Study 1, the model tests (353 runs), is finished. Its task set and checker are in `study1/` and are the first tested code in this repository. Study 2, the main experiment, is next. The modules `cell.py` and `functions.py` in `src/ssm3/` now work, except `ask_operator`, which stays a stub until open decision OD1 is settled. The other modules are still documented stubs that follow the components of the Design Document. Several design questions are still open until the client approves the Design Document at Gate A (13 November 2026), so the code does not fix them.
+Study 1, the model tests (353 runs), is finished. Its task set and checker are in `study1/` and are the first tested code in this repository. Study 2, the main experiment, is next. The simulated cell with two levels per tray slot, the four plan functions, the checker (every code of Table 9 except AMBIGUOUS and RULE_OVERRIDE), the layout comparison of the baseline and the run limits of the orchestrator now work, following Design Document 0.4. `ask_operator`, the planner, the orchestrator loop and the recipe table are still documented stubs, like the other modules. Some design questions are still open until the client approves the Design Document at Gate A (18 November 2026), so the code does not fix them.
 
 ## Layout
 

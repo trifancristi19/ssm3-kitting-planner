@@ -6,5 +6,5 @@
     "return": "RETURN"
   },
   "parts": {"BOLT": "BIN_1", "SPACER_SHORT": "BIN_2", "SPACER_LONG": "BIN_3"},
-  "limits": {"parts_per_slot": 1, "parts_in_gripper": 1}
+  "limits": {"levels_per_slot": 2, "parts_in_gripper": 1, "return_capacity": 8, "max_steps": 40}
 }

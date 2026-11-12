@@ -1,54 +1,12 @@
 """Tests for the simulated cell and the four working library functions."""
 
-import copy
 import json
-from pathlib import Path
 
 import pytest
 
 from ssm3 import functions
-from ssm3.capability import load_capability
 from ssm3.cell import SimulatedCell, empty_state
 from ssm3.functions import STATUSES, StepResult, locate, move_to, pick, place
-
-ROOT = Path(__file__).resolve().parent.parent
-
-# The Chapter 6 plan, copied exactly.
-PLAN_JSON = """
-{"plan": [
-  {"function": "move_to", "args": {"position": "SLOT_2"}},
-  {"function": "pick", "args": {"part": "SPACER_SHORT", "source": "SLOT_2"}},
-  {"function": "move_to", "args": {"position": "RETURN"}},
-  {"function": "place", "args": {"part": "SPACER_SHORT", "slot": "RETURN"}},
-  {"function": "move_to", "args": {"position": "BIN_3"}},
-  {"function": "pick", "args": {"part": "SPACER_LONG", "source": "BIN_3"}},
-  {"function": "move_to", "args": {"position": "SLOT_2"}},
-  {"function": "place", "args": {"part": "SPACER_LONG", "slot": "SLOT_2"}},
-  {"function": "move_to", "args": {"position": "HOME"}}
-]}
-"""
-
-
-@pytest.fixture
-def capability():
-    # Chapter 13 has a blue spacer that the Chapter 6 example lacks, so it goes in a fourth bin here.
-    # The part list is open (OD11), so config/ stays unchanged.
-    data = copy.deepcopy(load_capability(ROOT / "config" / "capability_example.json"))
-    data["positions"]["bins"].append("BIN_4")
-    data["parts"]["SPACER_BLUE"] = "BIN_4"
-    return data
-
-
-@pytest.fixture
-def cell(capability):
-    """The Chapter 13 initial state."""
-    state = empty_state(capability)
-    state["slots"]["SLOT_1"] = ["SPACER_BLUE"]
-    state["slots"]["SLOT_2"] = ["SPACER_SHORT"]
-    state["slots"]["SLOT_3"] = ["BOLT"]
-    state["bins"]["BIN_3"] = ["SPACER_LONG"]
-    return SimulatedCell(capability, state)
-
 
 # Cell
 
@@ -77,14 +35,25 @@ def test_cell_copies_the_state_it_is_given(capability):
     assert cell.state()["return"] == []
 
 
-def test_free_follows_the_capability_limit(capability):
-    capability["limits"]["parts_per_slot"] = 2
+def test_free_follows_levels_per_slot(capability):
+    # Was parts_per_slot before Design Document 0.4. A slot now has room while one of its levels is empty (DD18).
     state = empty_state(capability)
     state["slots"]["SLOT_1"] = ["BOLT"]
     cell = SimulatedCell(capability, state)
     assert cell.is_free("SLOT_1")
     state["slots"]["SLOT_1"] = ["BOLT", "SPACER_LONG"]
     assert not SimulatedCell(capability, state).is_free("SLOT_1")
+    capability["limits"]["levels_per_slot"] = 1
+    state["slots"]["SLOT_1"] = ["BOLT"]
+    assert not SimulatedCell(capability, state).is_free("SLOT_1")
+
+
+def test_free_return_follows_return_capacity(capability):
+    state = empty_state(capability)
+    state["return"] = ["BOLT"] * 7
+    assert SimulatedCell(capability, state).is_free("RETURN")
+    state["return"] = ["BOLT"] * 8
+    assert not SimulatedCell(capability, state).is_free("RETURN")
 
 
 def test_unknown_failure_kind_raises(cell):
@@ -102,8 +71,13 @@ def test_move_part_failure_moves_the_part(cell):
 def test_move_part_failure_rejects_bad_requests(cell):
     with pytest.raises(ValueError):
         cell.inject_failure("move_part", part="BOLT", source="BIN_3", destination="BIN_1")
+    # SLOT_1 has a free top level since Design Document 0.4 (DD18), so the full slot is filled first.
+    cell.inject_failure("move_part", part="SPACER_LONG", source="BIN_3", destination="SLOT_1")
+    assert cell.state()["slots"]["SLOT_1"] == ["SPACER_BLUE", "SPACER_LONG"]
     with pytest.raises(ValueError):
-        cell.inject_failure("move_part", part="SPACER_LONG", source="BIN_3", destination="SLOT_1")
+        cell.inject_failure("move_part", part="BOLT", source="SLOT_3", destination="SLOT_1")
+    with pytest.raises(ValueError):
+        cell.inject_failure("move_part", part="SPACER_BLUE", source="SLOT_1", destination="SLOT_4")
 
 
 # move_to
@@ -314,8 +288,8 @@ def run_plan(cell, plan):
     return results
 
 
-def test_chapter_13_integration(cell):
-    plan = json.loads(PLAN_JSON)["plan"]
+def test_chapter_13_integration(cell, chapter6_plan):
+    plan = chapter6_plan
     results = run_plan(cell, plan)
     assert len(results) == len(plan)
     assert all(result.status == "success" for result in results)
@@ -336,12 +310,13 @@ def test_variation_long_spacer_missing(cell):
     assert pick(missing, "SPACER_LONG", "BIN_3").status == "not found"
 
 
-def test_variation_return_position_occupied(cell):
-    # A part left in the return position before the order. Slots 1 and 3 stay untouched, as in Chapter 13.
+def test_variation_return_position_full(cell, chapter6_plan):
+    # The return position is filled up to return_capacity before the order (DD20). Before Design Document 0.4
+    # one part was enough to fill it. Slots 1 and 3 stay untouched, as in Chapter 13.
     state = cell.state()
-    state["return"] = ["BOLT"]
+    state["return"] = ["BOLT"] * cell.capability["limits"]["return_capacity"]
     occupied = SimulatedCell(cell.capability, state)
-    plan = json.loads(PLAN_JSON)["plan"]
+    plan = chapter6_plan
     results = run_plan(occupied, plan)
     assert results[-1].status == "blocked"
     assert len(results) == 4
@@ -349,10 +324,103 @@ def test_variation_return_position_occupied(cell):
     assert occupied.state()["slots"]["SLOT_3"] == ["BOLT"]
 
 
-def test_variation_part_moved_after_planning(cell):
-    plan = json.loads(PLAN_JSON)["plan"]
+def test_variation_part_moved_after_planning(cell, chapter6_plan):
+    plan = chapter6_plan
     results = run_plan(cell, plan[:4])
     assert all(result.status == "success" for result in results)
     cell.inject_failure("move_part", part="SPACER_LONG", source="BIN_3", destination="BIN_1")
     results = run_plan(cell, plan[4:])
     assert results[-1].status == "not found"
+
+
+# Two levels per slot (DD18, DD19) and the return capacity (DD20)
+
+def test_place_on_top_after_the_base(cell):
+    _hold(cell, "SPACER_LONG", "BIN_3")
+    move_to(cell, "SLOT_2")
+    result = place(cell, "SPACER_LONG", "SLOT_2", level="top")
+    assert result.status == "success"
+    assert result.state["slots"]["SLOT_2"] == ["SPACER_SHORT", "SPACER_LONG"]
+
+
+def test_place_on_top_of_an_empty_base_is_blocked(cell):
+    _hold(cell, "SPACER_LONG", "BIN_3")
+    move_to(cell, "SLOT_4")
+    before = cell.state()
+    assert place(cell, "SPACER_LONG", "SLOT_4", level="top").status == "blocked"
+    assert cell.state() == before
+
+
+def test_place_on_an_occupied_top_is_blocked(cell):
+    state = cell.state()
+    state["slots"]["SLOT_2"] = ["SPACER_SHORT", "BOLT"]
+    full = SimulatedCell(cell.capability, state)
+    _hold(full, "SPACER_LONG", "BIN_3")
+    move_to(full, "SLOT_2")
+    assert place(full, "SPACER_LONG", "SLOT_2", level="top").status == "blocked"
+    assert place(full, "SPACER_LONG", "SLOT_2", level="base").status == "blocked"
+
+
+def test_place_without_a_level_means_the_base(cell):
+    _hold(cell, "SPACER_LONG", "BIN_3")
+    move_to(cell, "SLOT_4")
+    assert place(cell, "SPACER_LONG", "SLOT_4").state["slots"]["SLOT_4"] == ["SPACER_LONG"]
+
+
+def test_place_with_a_level_for_the_return_position_is_blocked(cell):
+    _hold(cell, "SPACER_LONG", "BIN_3")
+    move_to(cell, "RETURN")
+    before = cell.state()
+    assert place(cell, "SPACER_LONG", "RETURN", level="base").status == "blocked"
+    assert cell.state() == before
+
+
+def test_place_with_an_unknown_level_is_blocked(cell):
+    _hold(cell, "SPACER_LONG", "BIN_3")
+    move_to(cell, "SLOT_4")
+    for level in ("middle", "", "BASE", 0):
+        assert place(cell, "SPACER_LONG", "SLOT_4", level=level).status == "blocked"
+    assert cell.state()["gripper"] == "SPACER_LONG"
+
+
+def test_place_in_a_full_return_position_is_blocked(cell):
+    state = cell.state()
+    state["return"] = ["BOLT"] * cell.capability["limits"]["return_capacity"]
+    full = SimulatedCell(cell.capability, state)
+    _hold(full, "SPACER_LONG", "BIN_3")
+    move_to(full, "RETURN")
+    assert place(full, "SPACER_LONG", "RETURN").status == "blocked"
+
+
+def test_return_position_takes_more_than_one_part(cell):
+    # One part per position blocked a two-slot kit change at the second return (DD20).
+    for slot, part in (("SLOT_2", "SPACER_SHORT"), ("SLOT_3", "BOLT")):
+        _hold(cell, part, slot)
+        move_to(cell, "RETURN")
+        assert place(cell, part, "RETURN").status == "success"
+    assert cell.state()["return"] == ["SPACER_SHORT", "BOLT"]
+
+
+def test_pick_of_a_covered_base_is_blocked_then_works_once_the_top_is_gone(cell):
+    state = cell.state()
+    state["slots"]["SLOT_2"] = ["SPACER_SHORT", "BOLT"]
+    stacked = SimulatedCell(cell.capability, state)
+    move_to(stacked, "SLOT_2")
+    before = stacked.state()
+    assert pick(stacked, "SPACER_SHORT", "SLOT_2").status == "blocked"
+    assert stacked.state() == before
+    assert pick(stacked, "BOLT", "SLOT_2").status == "success"
+    move_to(stacked, "RETURN")
+    place(stacked, "BOLT", "RETURN")
+    move_to(stacked, "SLOT_2")
+    assert pick(stacked, "SPACER_SHORT", "SLOT_2").status == "success"
+    assert stacked.state()["slots"]["SLOT_2"] == []
+
+
+def test_chapter_6_plan_without_a_level_still_runs(cell, chapter6_plan):
+    # Plans written before the level model stay valid: a place without a level means the base (Chapter 5).
+    old_plan = [dict(step, args={k: v for k, v in step["args"].items() if k != "level"}) for step in chapter6_plan]
+    assert all("level" not in step["args"] for step in old_plan)
+    results = run_plan(cell, old_plan)
+    assert all(result.status == "success" for result in results)
+    assert cell.state()["slots"]["SLOT_2"] == ["SPACER_LONG"]
