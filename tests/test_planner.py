@@ -9,8 +9,6 @@ from ssm3.planner import (
     PROMPT_VERSION,
     ResponseFormatError,
     build_prompt,
-    call_model,
-    llm_planner,
     parse_response,
 )
 
@@ -141,10 +139,3 @@ def test_the_names_only_variant_hides_inputs_and_preconditions(cell):
 def test_the_prompt_is_the_same_every_time(cell):
     assert build_prompt(ORDER, cell.state(), cell.capability) == build_prompt(ORDER, cell.state(), cell.capability)
     assert PROMPT_VERSION
-
-
-def test_the_model_client_is_still_a_stub(cell):
-    with pytest.raises(NotImplementedError):
-        call_model("prompt", {"model": "openai/gpt-oss-120b"})
-    with pytest.raises(NotImplementedError):
-        llm_planner({"model": "openai/gpt-oss-120b"})(ORDER, cell.state(), cell.capability, [])

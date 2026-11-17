@@ -12,17 +12,47 @@ and temperature 0 (NFR1). The main model is GPT-OSS 120B on Groq, confirmed afte
 the pilot (DD17). API keys come from environment variables, never from the
 repository (NFR4).
 
-The prompt builder and the response parser work. The answer keys are "plan", "ask"
-and "refuse", the format the checker of the model tests used (Chapter 6). The
-prompt holds the parts of Chapter 7 in their order, and the pilot variant with only
-the function names is built in (DD22). call_model is still a stub, because it needs
-the API key and the model client.
+The prompt builder, the response parser and the model client work. The answer
+keys are "plan", "ask" and "refuse", the format the checker of the model tests used
+(Chapter 6). The prompt holds the parts of Chapter 7 in their order, and the pilot
+variant with only the function names is built in (DD22).
+
+call_model sends the prompt to Groq's OpenAI-compatible chat completions endpoint
+with Python's standard library, the same way the model tests did. The key comes
+only from the GROQ_API_KEY environment variable or a local .env file, which git
+ignores. Errors follow DD14: a rate limit, a server error or a lost connection
+raises ProviderLimit, a call that takes longer than its time limit raises
+ModelTimeout, and a refused key or a bad request raises ModelAccessError, because
+repeating those cannot help. The tests never reach Groq: they replace the HTTP
+call, and the network is blocked in every test.
 """
 
 import json
+import os
+import urllib.error
+import urllib.request
+from pathlib import Path
 
 # Recorded in every run log (Table 11). Raise it whenever the prompt text changes.
-PROMPT_VERSION = "S2-P1"
+# S2-P2: the empty plan for a complete order was added after the review of pull request 7.
+PROMPT_VERSION = "S2-P2"
+
+# The model settings. The model is the proposed main planner, confirmed after the pilot (DD17), with the exact
+# model ID the model tests used on Groq. Temperature 0 and JSON output follow Chapter 7 and NFR1, and the time
+# limit of 60 seconds per model call follows DD14.
+DEFAULT_SETTINGS = {
+    "provider": "groq",
+    "base_url": "https://api.groq.com/openai/v1",
+    "model": "openai/gpt-oss-120b",
+    "temperature": 0,
+    "json_mode": True,
+    "timeout_seconds": 60,
+}
+KEY_VARIABLE = "GROQ_API_KEY"
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+# HTTP statuses that mean the provider is busy or limited, not that the request is wrong (DD14).
+PROVIDER_LIMIT_STATUSES = {429, 498, 500, 502, 503, 504}
 
 # The answer format of the model tests (Chapter 6): exactly one of these keys.
 ANSWER_KEYS = ("plan", "ask", "refuse")
@@ -57,6 +87,29 @@ ANSWER_FORMAT = """Answer only with JSON in exactly one of these forms, nothing 
 
 class ResponseFormatError(ValueError):
     """The answer is not exactly one of a plan, a question or a refusal (FORMAT, Table 9)."""
+
+
+class ModelError(Exception):
+    """A model call that did not return an answer."""
+
+
+class ProviderLimit(ModelError):
+    """A provider error or rate limit. It is logged as a provider limit, not as a model timeout (DD14).
+
+    retry_after is the number of seconds the provider asked to wait, when it said so.
+    """
+
+    def __init__(self, message, retry_after=None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class ModelTimeout(ModelError):
+    """The model did not answer within the time limit of one call (DD14)."""
+
+
+class ModelAccessError(ModelError):
+    """The key is missing or refused, or the request is wrong. Repeating the call does not help."""
 
 
 def _cell_text(capability):
@@ -140,12 +193,77 @@ def build_prompt(order, state, capability, history=None, function_detail="full")
     return "\n\n".join(parts) + "\n"
 
 
-def call_model(prompt, settings):
-    """Send the prompt to the configured model and return its raw answer.
+def api_key(env_file=None):
+    """Return the Groq key from the environment, or from a local .env file. Never print or log it.
 
-    A provider error or rate limit raises orchestrator.ProviderLimit (DD14).
+    A key read from .env is also put in the environment, so the run logger removes it from every record (NFR4).
     """
-    raise NotImplementedError("Model client, see Design Document Chapter 7")
+    key = os.environ.get(KEY_VARIABLE, "").strip()
+    if key:
+        return key
+    path = Path(env_file) if env_file else ENV_FILE
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            name, sep, value = line.strip().partition("=")
+            if sep and name.strip() == KEY_VARIABLE:
+                key = value.strip().strip('"').strip("'")
+                if key:
+                    os.environ[KEY_VARIABLE] = key
+                    return key
+    raise ModelAccessError(f"{KEY_VARIABLE} is not set. Set it with setx or in a local .env file, never in the code.")
+
+
+def _retry_after(error):
+    header = error.headers.get("retry-after") if error.headers else None
+    try:
+        return float(header) if header else None
+    except ValueError:
+        return None
+
+
+def call_model(prompt, settings=None, opener=None):
+    """Send the prompt to the configured model and return its raw answer as text.
+
+    settings defaults to DEFAULT_SETTINGS. opener replaces urllib.request.urlopen, so the
+    tests never reach the network. A rate limit, a server error or a lost connection raises
+    ProviderLimit, a call over the time limit raises ModelTimeout, and a refused key or a
+    bad request raises ModelAccessError (DD14).
+    """
+    settings = {**DEFAULT_SETTINGS, **(settings or {})}
+    key = api_key()
+    payload = {
+        "model": settings["model"],
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": settings["temperature"],
+    }
+    if settings["json_mode"]:
+        payload["response_format"] = {"type": "json_object"}
+    request = urllib.request.Request(
+        settings["base_url"] + "/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "User-Agent": "ssm3-kitting-planner"},
+    )
+    open_url = opener or urllib.request.urlopen
+    provider = settings["provider"]
+    try:
+        with open_url(request, timeout=settings["timeout_seconds"]) as response:
+            answer = json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", "replace")[:300].replace(key, "[removed]")
+        if error.code in PROVIDER_LIMIT_STATUSES:
+            raise ProviderLimit(f"{provider} returned {error.code}: {body}", retry_after=_retry_after(error)) from None
+        raise ModelAccessError(f"{provider} refused the request with {error.code}: {body}") from None
+    except TimeoutError:
+        raise ModelTimeout(f"no answer within {settings['timeout_seconds']} seconds") from None
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, TimeoutError):
+            raise ModelTimeout(f"no answer within {settings['timeout_seconds']} seconds") from None
+        raise ProviderLimit(f"could not reach {provider}: {error.reason}") from None
+    try:
+        return answer["choices"][0]["message"].get("content") or ""
+    except (KeyError, IndexError, TypeError, AttributeError):
+        raise ProviderLimit(f"{provider} sent an answer without a message") from None
 
 
 def parse_response(text):
@@ -176,7 +294,7 @@ def parse_response(text):
     return {"kind": kind, "value": value}
 
 
-def llm_planner(settings, function_detail="full"):
+def llm_planner(settings=None, function_detail="full"):
     """Return the planner the orchestrator calls: build the prompt, call the model, return its raw answer."""
 
     def plan(order, state, capability, history):

@@ -36,7 +36,13 @@ import time
 
 from ssm3 import functions
 from ssm3.checker import check
-from ssm3.planner import ResponseFormatError, parse_response
+
+# ProviderLimit lives next to the model client that raises it. It is imported here, so run_with_provider_repeats
+# catches exactly the class call_model raises (DD14), and callers can still import it from this module.
+from ssm3.planner import ProviderLimit, ResponseFormatError, parse_response
+
+__all__ = ["PROVIDER_REPEATS", "REJECTS_BEFORE_ASKING", "VARIANTS", "ProviderLimit", "run_order",
+           "run_with_provider_repeats", "step_budget"]
 
 VARIANTS = ("open loop", "closed loop")
 
@@ -45,10 +51,6 @@ PROVIDER_REPEATS = 3
 
 # Rejected plans in a row before the operator is asked once (DD13).
 REJECTS_BEFORE_ASKING = 3
-
-
-class ProviderLimit(Exception):
-    """A provider error or rate limit. It is logged as a provider limit, not as a model timeout (DD14)."""
 
 
 def step_budget(capability, expected_plan=None):

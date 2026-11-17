@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSM3 cell chat</title>
+<style>
+__CELL_STYLE__
+</style>
+<style>
+main { grid-template-columns: minmax(0, 1fr) 400px; }
+@media (max-width: 1000px) { main { grid-template-columns: minmax(0, 1fr); } }
+.chat { display: flex; flex-direction: column; height: calc(100vh - 150px); min-height: 520px; padding: 0; overflow: hidden; }
+@media (max-width: 1100px) { .chat { height: 620px; } }
+.chat-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.chat-head h2 { margin: 0; }
+.loops { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.loops button { border: 0; border-radius: 0; padding: 5px 10px; font-size: 13px; }
+.loops button.on { background: var(--accent); color: #fff; }
+#messages { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 92%; border-radius: 12px; padding: 8px 11px; border: 1px solid var(--line); background: var(--bg);
+  font-size: 14px; word-wrap: break-word; }
+.msg .who { display: block; font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin-bottom: 2px; }
+.msg.me { align-self: flex-end; background: var(--accent); color: #fff; border-color: var(--accent); }
+.msg.me .who { color: rgba(255,255,255,.8); }
+.msg.planner { border-color: var(--plan); background: var(--plan-bg); }
+.msg.run { border-color: var(--run); background: var(--run-bg); }
+.msg.reject, .msg.error { border-color: var(--reject); background: var(--reject-bg); }
+.msg.ask { border-color: var(--ask); background: var(--ask-bg); }
+.msg.note { background: transparent; border: 0; color: var(--muted); font-size: 13px; padding: 0 4px; }
+.msg.steps { background: transparent; font-size: 13px; padding: 6px 10px; }
+.msg.steps div.fail { color: var(--reject); font-weight: 600; }
+.msg ol { margin: 4px 0 0; padding-left: 22px; }
+.msg details { margin-top: 4px; }
+.msg pre { margin: 4px 0 0; }
+.composer { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.examples { display: flex; flex-wrap: wrap; gap: 6px; }
+.examples button { font-size: 12.5px; padding: 3px 9px; border-radius: 999px; color: var(--muted); }
+.row { display: flex; gap: 8px; }
+#text { flex: 1; font: inherit; font-size: 14px; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; resize: none; min-height: 42px; }
+#text:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+#text.answering { border-color: var(--ask); outline-color: var(--ask); }
+#status { font-size: 12.5px; color: var(--muted); min-height: 16px; }
+.cell-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SSM3 kitting cell, chat mode</h1>
+  <p class="sub">Type a kit order. The planner turns it into a plan, the checker tests every step on a copy of the cell,
+    and only then does the arm move.</p>
+  <div class="chips" id="chips"></div>
+</header>
+<main>
+  <section class="stage">
+    <div id="banner" role="status" aria-live="polite"></div>
+    <div class="card canvas"><svg id="cell" role="img" aria-label="Side view of the kitting cell"></svg></div>
+    <div class="cell-tools">
+      <div class="legend" id="legend"></div>
+      <button id="reset" title="Put the cell back in the start state of Chapter 13">Reset cell</button>
+    </div>
+  </section>
+  <aside>
+    <div class="card chat">
+      <div class="chat-head">
+        <h2>Orders</h2>
+        <div class="loops" role="group" aria-label="Loop">
+          <button id="loop-open" class="on" title="One model call: the whole plan is checked and run">Open loop</button>
+          <button id="loop-closed" title="The planner is asked again after every step">Closed loop</button>
+        </div>
+      </div>
+      <div id="messages" aria-live="polite"></div>
+      <div class="composer">
+        <div class="examples" id="examples"></div>
+        <div class="row">
+          <textarea id="text" rows="2" placeholder="For example: put the bolt from BIN_1 in slot 4"></textarea>
+          <button id="send" class="primary">Send</button>
+        </div>
+        <div id="status"></div>
+      </div>
+    </div>
+  </aside>
+</main>
+<footer>Chat mode runs on this computer only. Every order is planned by the real model, so it uses the Groq free-tier
+limit. The checker, the loop and the cell are the same code as in the experiment.</footer>
+<script>
+(async function () {
+  "use strict";
+  const SVG = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, ...children) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === "class") node.className = v; else node.setAttribute(k, v);
+    }
+    for (const c of children) node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    return node;
+  }
+  function svg(tag, attrs, text) {
+    const node = document.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+  const sentence = t => {
+    t = String(t || "").trim();
+    t = t.charAt(0).toUpperCase() + t.slice(1);
+    return t && !/[.!?]$/.test(t) ? t + "." : t;
+  };
+  async function api(path, body) {
+    const options = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+    const response = await fetch(path, options);
+    return response.json();
+  }
+
+  // The drawing of the cell needs the start state first.
+  const first = await api("/api/events?since=0");
+  const DATA = { initial_state: first.state };
+  const end = null;
+  const protectedSlots = new Set();
+
+__CELL_VIEW__
+
+  function parsePlan(raw) {
+    try {
+      const a = JSON.parse(raw);
+      if (a && Array.isArray(a.plan)) return { kind: "plan", steps: a.plan };
+      if (a && typeof a.ask === "string") return { kind: "ask", text: a.ask };
+      if (a && typeof a.refuse === "string") return { kind: "refuse", text: a.refuse };
+    } catch (e) { /* not JSON */ }
+    return { kind: "unreadable" };
+  }
+  function stepText(step) {
+    const a = (step && step.args) || {};
+    switch (step && step.function) {
+      case "move_to": return "Move to " + a.position;
+      case "pick": return "Pick " + a.part + " from " + a.source;
+      case "place": return "Place " + a.part + " in " + a.slot + (a.level ? ", " + a.level + " level" : "");
+      case "locate": return "Locate " + a.part;
+      default: return (step && step.function) + " " + JSON.stringify(a);
+    }
+  }
+
+  // Header
+  const chips = document.getElementById("chips");
+  const chip = (label, value) => chips.append(el("span", { class: "chip" }, label + " ", el("b", {}, value)));
+  chip("Planner", first.uses_model ? first.model + " on Groq" : "test planner, no language model");
+  chip("Checker", "outside the model");
+  const legend = document.getElementById("legend");
+  for (const p of ["SPACER_SHORT", "SPACER_LONG", "SPACER_BLUE", "BOLT"]) {
+    const sw = el("i"); sw.style.background = partInfo(p).color;
+    legend.append(el("span", {}, sw, p));
+  }
+
+  // The cell on screen
+  let shown = clone(first.state);
+  let plan = null;
+  const restPos = s => [X[s.arm] !== undefined ? X[s.arm] : X.HOME, REST_Y];
+  function drawState(s) { drawParts(s); const [ax, ay] = restPos(s); drawArm(ax, ay, s.gripper); }
+  drawStatic();
+  drawState(shown);
+
+  const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  function animateStep(prev, next, r) {
+    return new Promise(resolve => {
+      const [x0] = restPos(prev), [x1] = restPos(next);
+      const dur = 900, t0 = performance.now();
+      const finish = () => { drawState(next); resolve(); };
+      if (r.status !== "success") { finish(); return; }
+      if (r.function === "move_to") {
+        drawParts(prev);
+        const tick = now => {
+          const t = Math.min(1, (now - t0) / dur);
+          drawArm(x0 + (x1 - x0) * ease(t), REST_Y, prev.gripper);
+          if (t < 1) requestAnimationFrame(tick); else finish();
+        };
+        requestAnimationFrame(tick);
+      } else if (r.function === "pick" || r.function === "place") {
+        const pos = r.function === "pick" ? r.args.source : r.args.slot;
+        const holding = r.function === "pick" ? next.gripper : prev.gripper;
+        const partH = holding ? partInfo(holding).h : 24;
+        const low = r.function === "pick" ? stackTop(prev, pos) - 14 : stackTop(prev, pos) - partH - 12;
+        let swapped = false;
+        drawParts(prev);
+        const tick = now => {
+          const t = Math.min(1, (now - t0) / dur);
+          const down = t < .5 ? ease(t * 2) : ease((1 - t) * 2);
+          if (!swapped && t >= .5) { swapped = true; drawParts(next); }
+          drawArm(x1, REST_Y + (low - REST_Y) * down, swapped ? next.gripper : prev.gripper);
+          if (t < 1) requestAnimationFrame(tick); else finish();
+        };
+        requestAnimationFrame(tick);
+      } else finish();
+    });
+  }
+
+  // Chat messages. Text from the server always goes in through textContent, never as HTML.
+  const messages = document.getElementById("messages");
+  let stepBox = null;
+  function add(cls, who, ...body) {
+    const box = el("div", { class: "msg " + cls }, who ? el("span", { class: "who" }, who) : "", ...body);
+    messages.append(box);
+    messages.scrollTop = messages.scrollHeight;
+    if (cls !== "steps") stepBox = null;
+    return box;
+  }
+  const banner = document.getElementById("banner");
+  function setBanner(cls, tag, text, detail) {
+    banner.className = cls;
+    banner.replaceChildren(el("span", { class: "tag" }, tag), text || "", el("span", { class: "detail" }, detail || ""));
+  }
+  setBanner("", "Ready.", "Type an order on the right, or pick an example.", "");
+
+  function flagFor(r) {
+    if (!plan || plan.kind !== "plan" || !r.step) return null;
+    const a = (plan.steps[r.step - 1] || {}).args || {};
+    return a.slot || a.source || a.position || null;
+  }
+
+  async function show(e, animate) {
+    switch (e.event) {
+      case "user":
+        add("me", "Operator, " + e.order_id + ", " + e.variant, e.text);
+        setBanner("planner", "Order " + e.order_id + ":", "the planner is working on it.", e.variant === "closed loop" ? "Closed loop: the planner is asked again after every step." : "Open loop: one plan for the whole order.");
+        drawFlag(null);
+        break;
+      case "planner_response": {
+        plan = parsePlan(e.raw);
+        const secs = e.seconds !== undefined ? " in " + e.seconds + " s" : "";
+        let text = "an answer that could not be read";
+        if (plan.kind === "plan") text = plan.steps.length ? "a plan of " + plural(plan.steps.length, "step") : "an empty plan: the order is complete";
+        if (plan.kind === "ask") text = "a question";
+        if (plan.kind === "refuse") text = "a refusal: " + plan.text;
+        const box = add("planner", "Planner, call " + e.call, "Answered with " + text + secs + ".");
+        if (plan.kind === "plan" && plan.steps.length) box.append(el("ol", {}, ...plan.steps.map(s => el("li", {}, stepText(s)))));
+        box.append(el("details", {}, el("summary", {}, "Raw answer"), el("pre", {}, String(e.raw))));
+        setBanner("planner", "Planner call " + e.call + ":", "answered with " + text + secs + ".", "");
+        break;
+      }
+      case "check_result":
+        if (e.verdict === "run") {
+          add("run", "Checker", "RUN. " + sentence(e.reason));
+          setBanner("run", "Checker: RUN.", sentence(e.reason), "Every step was tested on a copy of the cell first.");
+          drawFlag(null);
+        } else if (e.verdict === "reject") {
+          add("reject", "Checker", "REJECT" + (e.step ? " at step " + e.step : "") + ", " + e.code + ". " + sentence(e.reason) + " Nothing moves.");
+          setBanner("reject", "Checker: REJECT" + (e.step ? " at step " + e.step : "") + ", " + e.code + ".", sentence(e.reason), "Nothing moves. The reason goes back to the planner.");
+          drawFlag(flagFor(e), "reject");
+        } else {
+          add("ask", "Checker", "ASK. " + sentence(e.reason));
+        }
+        break;
+      case "step_result": {
+        if (!stepBox) stepBox = add("steps", "Steps");
+        const ok = e.status === "success";
+        stepBox.append(el("div", { class: ok ? "" : "fail" }, "Step " + e.step + ": " + stepText(e) + (ok ? ", done" : ", " + e.status + ". " + sentence(e.message))));
+        messages.scrollTop = messages.scrollHeight;
+        setBanner(ok ? "" : "failure", "Step " + e.step + ":", stepText(e) + (ok ? "." : ", " + e.status + "."), ok ? sentence(e.message) : sentence(e.message));
+        const prev = shown;
+        shown = clone(e.state);
+        if (animate) await animateStep(prev, shown, e); else drawState(shown);
+        break;
+      }
+      case "feedback":
+        if (e.kind === "failure sent to the planner") add("ask", "Loop", "The failed step goes back to the planner with the new state.");
+        break;
+      case "operator_question":
+        add("ask", "Question for the operator", e.question);
+        setBanner("ask", "Question:", sentence(e.question), "Type the answer below.");
+        break;
+      case "operator_answer":
+        add("me", "Operator, answer", e.text);
+        break;
+      case "notice":
+        add("note", "", e.text);
+        break;
+      case "run_end": {
+        const done = e.outcome === "done";
+        add(done ? "run" : "reject", "Result, " + e.order_id, String(e.outcome).toUpperCase() + ". " + sentence(e.reason) + " " +
+          plural(e.steps_run, "step") + ", " + plural(e.planner_calls, "planner call") + ", " + plural(e.interventions, "operator question") + ".");
+        setBanner(done ? "run" : "reject", "Result: " + String(e.outcome).toUpperCase() + ".", sentence(e.reason), "");
+        shown = clone(e.final_state);
+        drawState(shown);
+        break;
+      }
+      case "error":
+        add("error", "Could not run", sentence(e.reason));
+        setBanner("failure", "Could not run:", sentence(e.reason), "");
+        break;
+      case "reset":
+        add("note", "", "The cell is back in the start state of Chapter 13.");
+        shown = clone(e.state); drawState(shown); drawFlag(null);
+        setBanner("", "Ready.", "The cell is back in the start state.", "");
+        break;
+      default:
+        break;
+    }
+  }
+
+  // Composer
+  const text = document.getElementById("text"), send = document.getElementById("send"), status = document.getElementById("status");
+  let variant = "open", busy = first.busy, waitingForAnswer = false;
+  const loopOpen = document.getElementById("loop-open"), loopClosed = document.getElementById("loop-closed");
+  function setLoop(v) { variant = v; loopOpen.classList.toggle("on", v === "open"); loopClosed.classList.toggle("on", v === "closed"); }
+  loopOpen.addEventListener("click", () => setLoop("open"));
+  loopClosed.addEventListener("click", () => setLoop("closed"));
+  function refresh() {
+    text.classList.toggle("answering", waitingForAnswer);
+    text.placeholder = waitingForAnswer ? "Type the answer to the question" : "For example: put the bolt from BIN_1 in slot 4";
+    send.textContent = waitingForAnswer ? "Answer" : "Send";
+    send.disabled = busy && !waitingForAnswer;
+    document.getElementById("reset").disabled = busy;
+    status.textContent = waitingForAnswer ? "The loop waits for your answer." : busy ? "The order runs. Wait for the result before the next order." : "";
+  }
+  async function submit() {
+    const value = text.value.trim();
+    if (!value) return;
+    const reply = waitingForAnswer ? await api("/api/answer", { text: value }) : await api("/api/order", { text: value, variant });
+    if (reply.ok) { text.value = ""; if (waitingForAnswer) waitingForAnswer = false; else busy = true; }
+    else status.textContent = reply.error || "Not sent.";
+    refresh();
+  }
+  send.addEventListener("click", submit);
+  text.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } });
+  document.getElementById("reset").addEventListener("click", async () => { const r = await api("/api/reset", {}); if (!r.ok) status.textContent = r.error; });
+  const examples = [
+    "Put the bolt from BIN_1 in slot 4.",
+    "Replace the short spacer in slot 2 with a long spacer. Put the short spacer in the return position.",
+    "Put the blue spacer from slot 1 on top of the bolt in slot 3.",
+    "Move a spacer to slot 4.",
+  ];
+  const exampleBox = document.getElementById("examples");
+  for (const ex of examples) {
+    const b = el("button", { type: "button" }, ex.length > 44 ? ex.slice(0, 42) + "..." : ex);
+    b.title = ex;
+    b.addEventListener("click", () => { text.value = ex; text.focus(); });
+    exampleBox.append(b);
+  }
+
+  // Events: the history once without animation, then new events with animation, one after the other.
+  let next = 0;
+  for (const e of first.events) { await show(e, false); next = e.n + 1; if (e.event === "operator_question") waitingForAnswer = true; if (e.event === "intervention") waitingForAnswer = false; }
+  shown = clone(first.state); drawState(shown);
+  refresh();
+  async function poll() {
+    try {
+      const data = await api("/api/events?since=" + next);
+      for (const e of data.events) {
+        next = e.n + 1;
+        if (e.event === "operator_question") waitingForAnswer = true;
+        if (e.event === "intervention" || e.event === "idle") waitingForAnswer = false;
+        await show(e, true);
+        if (e.event === "idle") busy = false;
+        refresh();
+      }
+      busy = data.busy;
+    } catch (err) {
+      status.textContent = "The chat server does not answer. Is scripts\\chat.py still running?";
+    }
+    refresh();
+    setTimeout(poll, 500);
+  }
+  poll();
+})();
+</script>
+</body>
+</html>

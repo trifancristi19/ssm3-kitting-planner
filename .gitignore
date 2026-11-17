@@ -33,3 +33,6 @@ desktop.ini
 
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# Run logs of the Gate A demo (scripts/demo.py)
+demo_logs/
