@@ -84,6 +84,8 @@ Without a file it opens the newest log in `demo_logs/`.
 
 The chat mode opens a page where you type a kit order in plain words and watch it run: the real model plans it, the checker tests every step on a copy of the cell, and the arm moves in a 2D view of the cell. The cell keeps its state from one order to the next. A question of the planner appears in the chat, and your answer goes back to the loop. "Reset cell" puts the start state of Chapter 13 back.
 
+The "Keep unchanged" tick boxes choose the tray slots the checker protects for the next order (SLOT_1 and SLOT_3 when the page opens, as in Chapter 13). The checker rejects any plan that changes a ticked slot with PROTECTED_SLOT, whatever the order text says. Typing "leave slot 1 unchanged" without ticking the box is only a request to the model, not a rule the checker enforces.
+
 ```
 .venv\Scripts\python scripts\chat.py
 ```

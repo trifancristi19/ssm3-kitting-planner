@@ -88,3 +88,21 @@ def test_main_builds_a_session_with_the_options(monkeypatch):
     assert seen == {"port": 9001, "model": "another-model", "delay": 1.0, "uses_model": True, "open_page": None}
     chat_server.main([], out=lambda line: None, show="opener", run=fake_serve)
     assert seen["port"] == chat_server.PORT and seen["open_page"] == "opener"
+
+
+def test_an_order_carries_the_ticked_slots_to_the_checker(tmp_path):
+    touches_slot_1 = json.dumps({"plan": [{"function": "move_to", "args": {"position": "SLOT_1"}},
+                                          {"function": "pick", "args": {"part": "SPACER_BLUE", "source": "SLOT_1"}}]})
+    s = session(tmp_path, touches_slot_1, '{"refuse": "Slot 1 stays unchanged"}')
+    assert call(s, "GET", "/api/events")[1]["default_protected"] == ["SLOT_1", "SLOT_3"]
+    assert call(s, "POST", "/api/order", {"text": "Take the blue spacer", "protected": ["SLOT_1"]})[0] == 200
+    s.wait(5)
+    reject = next(e for e in s.events_since() if e["event"] == "check_result")
+    assert reject["code"] == "PROTECTED_SLOT"
+
+
+def test_bad_protected_lists_are_refused(tmp_path):
+    s = session(tmp_path, PLAN)
+    assert call(s, "POST", "/api/order", {"text": "x", "protected": "SLOT_1"})[0] == 400
+    assert call(s, "POST", "/api/order", {"text": "x", "protected": ["SLOT_9"]})[0] == 400
+    assert s.events_since() == []

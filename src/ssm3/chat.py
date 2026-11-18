@@ -123,11 +123,27 @@ class ChatSession:
         return paced(planner_module.llm_planner(self.settings), self.delay,
                      lambda text: self.add({"event": "notice", "text": text.strip()}), sleep)
 
-    def run(self, text, variant="open"):
-        """Run one typed order to the end and return its summary, or None when it could not run."""
+    def slots(self):
+        return list(self.capability["positions"]["slots"])
+
+    def known_slots(self, protected):
+        """True when protected is a list of tray slots of this cell."""
+        return isinstance(protected, list | tuple) and all(slot in self.slots() for slot in protected)
+
+    def run(self, text, variant="open", protected=()):
+        """Run one typed order to the end and return its summary, or None when it could not run.
+
+        protected lists the tray slots the operator ticked as "keep unchanged". The checker
+        enforces them (PROTECTED_SLOT, Table 9), whatever the order text says, the same
+        way the task set protects slots in the experiment.
+        """
+        if not self.known_slots(protected):
+            raise ValueError(f"protected must list tray slots of the cell, got {protected!r}")
+        protected = [slot for slot in self.slots() if slot in protected]
         self.orders += 1
         order = {"order_id": f"C-{self.orders}", "text": text}
-        self.add({"event": "user", "order_id": order["order_id"], "text": text, "variant": VARIANTS[variant]})
+        self.add({"event": "user", "order_id": order["order_id"], "text": text, "variant": VARIANTS[variant],
+                  "protected": protected})
         if self.uses_model:
             try:
                 planner_module.api_key()
@@ -141,15 +157,18 @@ class ChatSession:
             info.update(model=self.model, provider="groq", prompt_version=planner_module.PROMPT_VERSION)
         try:
             return run_order(order, VARIANTS[variant], planner=self._make_planner(), cell=self.cell,
-                             operator=ChatOperator(self), log=log, info=info)
+                             operator=ChatOperator(self), log=log, protected=protected, info=info)
         except planner_module.ModelError as error:
             self.add({"event": "error", "reason": f"{type(error).__name__}: {error}"})
             return None
 
-    def submit(self, text, variant="open"):
-        """Start an order in the background. Returns False when the text is empty or an order still runs."""
+    def submit(self, text, variant="open", protected=()):
+        """Start an order in the background.
+
+        Returns False when the text is empty, the variant or a protected slot is unknown, or an order still runs.
+        """
         text = (text or "").strip()
-        if not text or variant not in VARIANTS:
+        if not text or variant not in VARIANTS or not self.known_slots(protected):
             return False
         with self._lock:
             if self.busy:
@@ -158,7 +177,7 @@ class ChatSession:
 
         def work():
             try:
-                self.run(text, variant)
+                self.run(text, variant, protected)
             except Exception as error:  # the chat must say what went wrong, not stop silently
                 self.add({"event": "error", "reason": f"{type(error).__name__}: {error}"})
             finally:

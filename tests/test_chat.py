@@ -35,7 +35,7 @@ def test_a_typed_order_runs_through_the_checker_and_the_cell(tmp_path):
     assert session.state()["slots"]["SLOT_4"] == ["BOLT"]
     events = session.events_since()
     assert events[0] == {"event": "user", "order_id": "C-1", "text": "Put the bolt from BIN_1 in slot 4",
-                         "variant": "open loop", "n": 0}
+                         "variant": "open loop", "protected": [], "n": 0}
     assert [e["n"] for e in events] == list(range(len(events)))
     assert "check_result" in kinds(session) and kinds(session)[-1] == "run_end"
     assert (tmp_path / f"{events[1]['run_id']}.jsonl").exists()
@@ -134,3 +134,38 @@ def test_a_provider_limit_ends_the_order_with_a_message(tmp_path, monkeypatch):
     events = session.events_since()
     assert events[-1]["event"] == "error" and "ProviderLimit" in events[-1]["reason"]
     assert "gsk_test_sentinel_key_0123456789" not in json.dumps(events)
+
+
+INTO_RETURN_FROM_SLOT_1 = plan(("move_to", {"position": "SLOT_1"}),
+                               ("pick", {"part": "SPACER_BLUE", "source": "SLOT_1"}),
+                               ("move_to", {"position": "RETURN"}),
+                               ("place", {"part": "SPACER_BLUE", "slot": "RETURN"}))
+
+
+def test_the_checker_protects_the_ticked_slots_whatever_the_order_says(tmp_path):
+    # Mihail's review: without this, only the model kept slots 1 and 3 unchanged in the chat.
+    session = chat.ChatSession(planner=answers(INTO_RETURN_FROM_SLOT_1, '{"refuse": "Slot 1 must stay unchanged"}'),
+                               log_dir=tmp_path)
+    before = session.state()
+    summary = session.run("Put the blue spacer from slot 1 in the return position", protected=["SLOT_3", "SLOT_1"])
+    assert summary["outcome"] == "refused"
+    events = session.events_since()
+    assert events[0]["protected"] == ["SLOT_1", "SLOT_3"]
+    assert next(e for e in events if e["event"] == "run_start")["protected"] == ["SLOT_1", "SLOT_3"]
+    reject = next(e for e in events if e["event"] == "check_result")
+    assert (reject["verdict"], reject["code"]) == ("reject", "PROTECTED_SLOT")
+    assert session.state() == before
+
+
+def test_without_ticked_slots_the_same_plan_runs(tmp_path):
+    session = chat.ChatSession(planner=answers(INTO_RETURN_FROM_SLOT_1), log_dir=tmp_path)
+    assert session.run("Put the blue spacer from slot 1 in the return position")["outcome"] == "done"
+    assert session.state()["return"] == ["SPACER_BLUE"]
+
+
+def test_unknown_protected_slots_are_refused(tmp_path):
+    session = chat.ChatSession(planner=answers(BOLT_TO_SLOT_4), log_dir=tmp_path)
+    assert not session.submit("Move the bolt", protected=["SLOT_9"])
+    assert not session.submit("Move the bolt", protected="SLOT_1")
+    assert not session.submit("Move the bolt", protected=["BIN_1"])
+    assert session.events_since() == []

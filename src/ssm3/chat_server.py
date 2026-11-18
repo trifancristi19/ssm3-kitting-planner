@@ -8,7 +8,7 @@ page open in the same browser cannot start a model call either.
 The routes:
     GET  /                    the chat page
     GET  /api/events?since=n  the events from number n on, whether an order runs, and the cell state
-    POST /api/order           {"text": ..., "variant": "open" or "closed"} starts an order
+    POST /api/order           {"text": ..., "variant": "open" or "closed", "protected": [slots]} starts an order
     POST /api/answer          {"text": ...} answers the question the loop is waiting on
     POST /api/reset           puts the cell back in the Chapter 13 start state
 
@@ -27,6 +27,8 @@ PORT = 8765
 PAGE_FILE = Path(__file__).with_name("chat_page.html")
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 MAX_BODY = 10_000
+# The slots ticked "keep unchanged" when the page opens: slots 1 and 3, as in the order of Chapter 13 (proposal).
+DEFAULT_PROTECTED = ("SLOT_1", "SLOT_3")
 
 
 VIEWER_PAGE = Path(__file__).with_name("viewer_page.html")
@@ -54,7 +56,8 @@ def handle(session, method, path, body=b"", content_type="", host="127.0.0.1"):
         except ValueError:
             since = 0
         return _json(200, {"events": session.events_since(since), "busy": session.busy, "state": session.state(),
-                           "uses_model": session.uses_model, "model": session.model})
+                           "uses_model": session.uses_model, "model": session.model,
+                           "default_protected": list(DEFAULT_PROTECTED)})
     if method == "POST" and url.path in ("/api/order", "/api/answer", "/api/reset"):
         # Only JSON is accepted. A browser sends JSON to another site only after asking
         # that site first, and this server never says yes, so other pages cannot post here.
@@ -69,7 +72,10 @@ def handle(session, method, path, body=b"", content_type="", host="127.0.0.1"):
         if not isinstance(data, dict):
             return _json(400, {"ok": False, "error": "Send a JSON object"})
         if url.path == "/api/order":
-            started = session.submit(str(data.get("text", "")), str(data.get("variant", "open")))
+            protected = data.get("protected", [])
+            if not session.known_slots(protected):
+                return _json(400, {"ok": False, "error": "protected must list tray slots of the cell"})
+            started = session.submit(str(data.get("text", "")), str(data.get("variant", "open")), protected)
             return _json(200 if started else 409, {"ok": started,
                                                    "error": None if started else "Empty order, or an order still runs"})
         if url.path == "/api/answer":

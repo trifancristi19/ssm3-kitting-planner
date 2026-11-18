@@ -44,6 +44,10 @@ main { grid-template-columns: minmax(0, 1fr) 400px; }
 #text:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 #text.answering { border-color: var(--ask); outline-color: var(--ask); }
 #status { font-size: 12.5px; color: var(--muted); min-height: 16px; }
+.keep { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+.keep b { color: var(--protect); font-weight: 650; }
+.keep label { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); cursor: pointer; }
+.keep input { accent-color: var(--protect); }
 .cell-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 </style>
 </head>
@@ -74,6 +78,7 @@ main { grid-template-columns: minmax(0, 1fr) 400px; }
       </div>
       <div id="messages" aria-live="polite"></div>
       <div class="composer">
+        <div class="keep" id="keep" title="The checker rejects any plan that changes a ticked slot, whatever the order text says"><b>Keep unchanged:</b></div>
         <div class="examples" id="examples"></div>
         <div class="row">
           <textarea id="text" rows="2" placeholder="For example: put the bolt from BIN_1 in slot 4"></textarea>
@@ -121,7 +126,8 @@ limit. The checker, the loop and the cell are the same code as in the experiment
   const first = await api("/api/events?since=0");
   const DATA = { initial_state: first.state };
   const end = null;
-  const protectedSlots = new Set();
+  // The slots ticked "keep unchanged". The checker enforces them, and the drawing frames them.
+  const protectedSlots = new Set(first.default_protected || []);
 
 __CELL_VIEW__
 
@@ -155,6 +161,8 @@ __CELL_VIEW__
     const sw = el("i"); sw.style.background = partInfo(p).color;
     legend.append(el("span", {}, sw, p));
   }
+  const keepSwatch = el("i"); keepSwatch.style.border = "2px dashed var(--protect)"; keepSwatch.style.background = "transparent";
+  legend.append(el("span", {}, keepSwatch, "kept unchanged"));
 
   // The cell on screen
   let shown = clone(first.state);
@@ -224,7 +232,8 @@ __CELL_VIEW__
   async function show(e, animate) {
     switch (e.event) {
       case "user":
-        add("me", "Operator, " + e.order_id + ", " + e.variant, e.text);
+        add("me", "Operator, " + e.order_id + ", " + e.variant, e.text,
+          el("span", { class: "who", style: "margin-top:4px" }, e.protected && e.protected.length ? "Checker keeps " + e.protected.join(", ") + " unchanged" : "No slot kept unchanged"));
         setBanner("planner", "Order " + e.order_id + ":", "the planner is working on it.", e.variant === "closed loop" ? "Closed loop: the planner is asked again after every step." : "Open loop: one plan for the whole order.");
         drawFlag(null);
         break;
@@ -303,6 +312,7 @@ __CELL_VIEW__
 
   // Composer
   const text = document.getElementById("text"), send = document.getElementById("send"), status = document.getElementById("status");
+  const keep = document.getElementById("keep");
   let variant = "open", busy = first.busy, waitingForAnswer = false;
   const loopOpen = document.getElementById("loop-open"), loopClosed = document.getElementById("loop-closed");
   function setLoop(v) { variant = v; loopOpen.classList.toggle("on", v === "open"); loopClosed.classList.toggle("on", v === "closed"); }
@@ -314,12 +324,13 @@ __CELL_VIEW__
     send.textContent = waitingForAnswer ? "Answer" : "Send";
     send.disabled = busy && !waitingForAnswer;
     document.getElementById("reset").disabled = busy;
+    for (const box of keep.querySelectorAll("input")) box.disabled = busy;
     status.textContent = waitingForAnswer ? "The loop waits for your answer." : busy ? "The order runs. Wait for the result before the next order." : "";
   }
   async function submit() {
     const value = text.value.trim();
     if (!value) return;
-    const reply = waitingForAnswer ? await api("/api/answer", { text: value }) : await api("/api/order", { text: value, variant });
+    const reply = waitingForAnswer ? await api("/api/answer", { text: value }) : await api("/api/order", { text: value, variant, protected: [...protectedSlots] });
     if (reply.ok) { text.value = ""; if (waitingForAnswer) waitingForAnswer = false; else busy = true; }
     else status.textContent = reply.error || "Not sent.";
     refresh();
@@ -330,7 +341,7 @@ __CELL_VIEW__
   const examples = [
     "Put the bolt from BIN_1 in slot 4.",
     "Replace the short spacer in slot 2 with a long spacer. Put the short spacer in the return position.",
-    "Put the blue spacer from slot 1 on top of the bolt in slot 3.",
+    "Put the blue spacer from slot 1 in the return position.",
     "Move a spacer to slot 4.",
   ];
   const exampleBox = document.getElementById("examples");
@@ -339,6 +350,18 @@ __CELL_VIEW__
     b.title = ex;
     b.addEventListener("click", () => { text.value = ex; text.focus(); });
     exampleBox.append(b);
+  }
+
+  // Keep unchanged: one tick box per tray slot. A change redraws the frames on the tray.
+  for (const slot of slots) {
+    const box = el("input", { type: "checkbox", value: slot });
+    box.checked = protectedSlots.has(slot);
+    box.addEventListener("change", () => {
+      if (box.checked) protectedSlots.add(slot); else protectedSlots.delete(slot);
+      staticLayer.replaceChildren();
+      drawStatic();
+    });
+    keep.append(el("label", {}, box, slot));
   }
 
   // Events: the history once without animation, then new events with animation, one after the other.
