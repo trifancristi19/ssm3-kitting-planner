@@ -7,7 +7,7 @@
 <style>
 :root {
   --bg: #f4f5f7; --panel: #ffffff; --ink: #1d232b; --muted: #5d6875; --line: #d9dde3;
-  --steel: #8a96a3; --steel-dark: #59636e; --table: #e7e9ec; --tray: #dfe5ec; --pocket: #f7f9fb;
+  --steel: #8a96a3; --steel-dark: #59636e; --table: #e7e9ec; --tray: #dfe5ec; --pocket: #f7f9fb; --arm: #2e3b4a;
   --run: #1f8a4c; --run-bg: #e3f4ea; --reject: #c62f2f; --reject-bg: #fbe7e7;
   --ask: #a86400; --ask-bg: #fdf0dc; --plan: #4b4fb8; --plan-bg: #eceefc;
   --protect: #b07a00; --accent: #2563c9;
@@ -15,7 +15,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #12161b; --panel: #1b2027; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2e3640;
-    --steel: #7d8996; --steel-dark: #aab4bf; --table: #262d36; --tray: #2c3540; --pocket: #20272f;
+    --steel: #7d8996; --steel-dark: #aab4bf; --table: #262d36; --tray: #2c3540; --pocket: #20272f; --arm: #4f6378;
     --run: #4cc283; --run-bg: #173325; --reject: #f07272; --reject-bg: #3a1c1c;
     --ask: #f0b55a; --ask-bg: #392a12; --plan: #9a9ef5; --plan-bg: #23264a;
     --protect: #e0b040; --accent: #6ea0f0;
@@ -23,7 +23,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #12161b; --panel: #1b2027; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2e3640;
-  --steel: #7d8996; --steel-dark: #aab4bf; --table: #262d36; --tray: #2c3540; --pocket: #20272f;
+  --steel: #7d8996; --steel-dark: #aab4bf; --table: #262d36; --tray: #2c3540; --pocket: #20272f; --arm: #4f6378;
   --run: #4cc283; --run-bg: #173325; --reject: #f07272; --reject-bg: #3a1c1c;
   --ask: #f0b55a; --ask-bg: #392a12; --plan: #9a9ef5; --plan-bg: #23264a;
   --protect: #e0b040; --accent: #6ea0f0;
@@ -45,8 +45,12 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; pa
 @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
 .stage { display: flex; flex-direction: column; gap: 12px; }
-#banner { border-radius: 10px; padding: 12px 14px; font-size: 16px; min-height: 52px; border: 1px solid var(--line);
+/* The banner keeps one height whatever its text, so the drawing below it never jumps. Its main line shows at most
+   two lines and the detail one, and the full text is in its title and in the event list. */
+#banner { border-radius: 10px; padding: 10px 14px; font-size: 16px; height: 88px; overflow: hidden; border: 1px solid var(--line);
+  display: flex; flex-direction: column; justify-content: center;
   background: var(--panel); transition: background .25s, border-color .25s; }
+#banner .line { line-height: 22px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 #banner.planner { background: var(--plan-bg); border-color: var(--plan); }
 #banner.run { background: var(--run-bg); border-color: var(--run); }
 #banner.reject, #banner.failure { background: var(--reject-bg); border-color: var(--reject); }
@@ -56,7 +60,9 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; pa
 #banner.run .tag { color: var(--run); }
 #banner.reject .tag, #banner.failure .tag { color: var(--reject); }
 #banner.ask .tag { color: var(--ask); }
-#banner .detail { display: block; color: var(--muted); font-size: 14px; margin-top: 2px; }
+#banner .detail { display: block; color: var(--muted); font-size: 14px; line-height: 20px; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#banner .detail:empty { display: none; }
 .canvas { padding: 6px; overflow: hidden; position: relative; }
 .cell3d { display: none; }
 .canvas.show3d svg { display: none; }
@@ -111,6 +117,8 @@ footer { color: var(--muted); font-size: 13px; padding: 0 24px 24px; }
 .pos-label { font: 600 13px "Segoe UI", system-ui, sans-serif; fill: var(--ink); }
 .group-label { font: 12px "Segoe UI", system-ui, sans-serif; fill: var(--muted); letter-spacing: .08em; }
 .small-label { font: 11px "Segoe UI", system-ui, sans-serif; fill: var(--muted); }
+/* A halo in the card colour keeps these labels readable where they cross the foot of the arm */
+.small-label, .protect-label { paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
 .protect-label { font: 600 11px "Segoe UI", system-ui, sans-serif; fill: var(--protect); }
 </style>
 </head>
@@ -222,14 +230,16 @@ The parts and the arm follow the cell state stored after every step.</footer>
   for (const s of slots) { X[s] = x; x += 96; }
   const trayRight = x - 44; x += 40;
   X.RETURN = x; x += 70;
-  const W = x; const H = 380;
-  const TABLE = 300, BIN_H = 64, POCKET_H = 62, LEVEL = 27, REST_Y = 130, RAIL = 40;
+  const W = x; const H = 380, TOP = -130;  // TOP leaves room above the table for the elbow of the arm
+  const TABLE = 300, BIN_H = 64, POCKET_H = 62, LEVEL = 27, REST_Y = 130;
   const cell = document.getElementById("cell");
-  cell.setAttribute("viewBox", "0 0 " + W + " " + H);
+  cell.setAttribute("viewBox", "0 " + TOP + " " + W + " " + (H - TOP));
   const bottomOf = pos => (pos in (state0.slots || {}) ? TABLE - 8 : TABLE - 6);
 
-  const staticLayer = svg("g"), partLayer = svg("g"), flagLayer = svg("g"), armLayer = svg("g");
-  cell.append(staticLayer, partLayer, flagLayer, armLayer);
+  const staticLayer = svg("g"), partLayer = svg("g"), looseLayer = svg("g"), flagLayer = svg("g"), armLayer = svg("g");
+  // The "keep unchanged" labels go above the arm, so the shoulder of the arm never hides them.
+  const labelLayer = svg("g");
+  cell.append(staticLayer, partLayer, looseLayer, flagLayer, armLayer, labelLayer);
 
   // 3D view (cell3d.js): every drawing call below also goes to the 3D scene, so both views show the same state.
   // A switch on the card picks the view. Without WebGL the switch is not shown and the page keeps the 2D view.
@@ -237,7 +247,7 @@ The parts and the arm follow the cell state stored after every step.</footer>
   const host3d = document.createElement("div");
   host3d.className = "cell3d";
   cellCard.append(host3d);
-  const view3d = typeof createCell3D === "function" ? createCell3D(host3d, { X, bins, slots, W, TABLE, RAIL, LEVEL,
+  const view3d = typeof createCell3D === "function" ? createCell3D(host3d, { X, bins, slots, W, TABLE, LEVEL,
     BIN_H, POCKET_H, trayLeft, trayRight, bottomOf, partInfo: name => partInfo(name), protectedSlots }) : null;
   if (view3d) {
     const VIEW_KEY = "ssm3-cell-view";
@@ -270,10 +280,11 @@ The parts and the arm follow the cell state stored after every step.</footer>
 
   function drawStatic() {
     if (view3d) view3d.drawStatic();
+    labelLayer.replaceChildren();
     staticLayer.append(svg("rect", { x: 20, y: TABLE, width: W - 40, height: 14, rx: 3, fill: "var(--table)" }));
-    staticLayer.append(svg("rect", { x: 20, y: RAIL - 6, width: W - 40, height: 12, rx: 6, fill: "var(--steel)" }));
-    staticLayer.append(svg("rect", { x: 26, y: RAIL - 20, width: 10, height: TABLE - RAIL + 20, fill: "var(--line)" }));
-    staticLayer.append(svg("rect", { x: W - 36, y: RAIL - 20, width: 10, height: TABLE - RAIL + 20, fill: "var(--line)" }));
+    // The foot of the arm, in the middle behind the bins and the tray (cellArmPose in cell3d.js)
+    staticLayer.append(svg("rect", { x: W / 2 - 34, y: TABLE - CELL_ARM.shoulder, width: 68, height: CELL_ARM.shoulder, rx: 10, fill: "var(--arm)" }));
+    staticLayer.append(svg("rect", { x: W / 2 - 43, y: TABLE - 8, width: 86, height: 8, rx: 2, fill: "var(--steel)" }));
     // HOME
     staticLayer.append(svg("rect", { x: X.HOME - 30, y: TABLE - 4, width: 60, height: 4, rx: 2, fill: "var(--steel)" }));
     staticLayer.append(svg("text", { x: X.HOME, y: TABLE + 34, "text-anchor": "middle", class: "pos-label" }, "HOME"));
@@ -299,7 +310,7 @@ The parts and the arm follow the cell state stored after every step.</footer>
       staticLayer.append(svg("line", { x1: sx - 38, x2: sx + 38, y1: TABLE - 8 - LEVEL, y2: TABLE - 8 - LEVEL,
         stroke: "var(--line)", "stroke-dasharray": "3 4" }));
       staticLayer.append(svg("text", { x: sx, y: TABLE + 34, "text-anchor": "middle", class: "pos-label" }, s));
-      if (isProtected) staticLayer.append(svg("text", { x: sx, y: TABLE - POCKET_H - 18, "text-anchor": "middle", class: "protect-label" }, "keep unchanged"));
+      if (isProtected) labelLayer.append(svg("text", { x: sx, y: TABLE - POCKET_H - 18, "text-anchor": "middle", class: "protect-label" }, "keep unchanged"));
     }
     if (slots.length) {
       const first = X[slots[0]];
@@ -343,13 +354,55 @@ The parts and the arm follow the cell state stored after every step.</footer>
   function drawArm(ax, ay, holding) {
     if (view3d) view3d.drawArm(ax, ay, holding);
     armLayer.replaceChildren();
-    armLayer.append(svg("rect", { x: ax - 34, y: RAIL - 16, width: 68, height: 32, rx: 7, fill: "var(--steel-dark)" }));
-    armLayer.append(svg("rect", { x: ax - 6, y: RAIL + 16, width: 12, height: Math.max(0, ay - RAIL - 26), fill: "var(--steel)" }));
-    armLayer.append(svg("rect", { x: ax - 30, y: ay - 12, width: 60, height: 10, rx: 3, fill: "var(--steel-dark)" }));
+    // The same pose as in 3D, seen from the front: the links, the joints, the flange and the gripper.
+    const p = cellArmPose({ W, TABLE }, ax, ay);
+    const pt = q => [q[0] + W / 2, TABLE - q[1]];
+    const link = (a, b, width) => armLayer.append(svg("line", { x1: pt(a)[0], y1: pt(a)[1], x2: pt(b)[0], y2: pt(b)[1],
+      stroke: "var(--arm)", "stroke-width": width, "stroke-linecap": "round" }));
+    const joint = (q, r) => armLayer.append(svg("circle", { cx: pt(q)[0], cy: pt(q)[1], r, fill: "var(--arm)", stroke: "var(--steel)", "stroke-width": 3 }));
+    link(p.shoulder, p.elbow, 44); link(p.elbow, p.wrist, 34); link(p.wrist, p.flange, 30);
+    joint(p.shoulder, 32); joint(p.elbow, 26); joint(p.wrist, 20);
+    ax = pt(p.flange)[0];
+    ay = pt(p.flange)[1] + CELL_ARM.flangeAbove;  // again from the pose, in case the target was out of reach
+    armLayer.append(svg("rect", { x: ax - 21, y: ay - 46, width: 42, height: 6, rx: 2, fill: "var(--steel)" }));
+    armLayer.append(svg("rect", { x: ax - 19, y: ay - 40, width: 38, height: 36, rx: 4, fill: "var(--pocket)", stroke: "var(--steel)", "stroke-width": 2 }));
     const open = holding ? partInfo(holding).w / 2 + 4 : 24;
     armLayer.append(svg("rect", { x: ax - open - 5, y: ay - 4, width: 5, height: 18, rx: 2, fill: "var(--steel-dark)" }));
     armLayer.append(svg("rect", { x: ax + open, y: ay - 4, width: 5, height: 18, rx: 2, fill: "var(--steel-dark)" }));
     if (holding) armLayer.append(drawPart(holding, ax, ay + 14 + partInfo(holding).h - 2));
+  }
+
+  // A loose part on its way down, when a part slips out of the gripper. A name of null clears it.
+  function drawLoose(name, cx, bottom) {
+    if (view3d) view3d.drawLoose(name, cx, bottom);
+    looseLayer.replaceChildren();
+    if (name) looseLayer.append(drawPart(name, cx, bottom));
+  }
+
+  // A part that slips out of the gripper at x falls into the bin dest. after is the state once it lies there.
+  // done is called when it lands. Returns an object whose stop() ends the fall at once.
+  function fallInto(part, x, dest, after, ms, done) {
+    const without = clone(after);
+    without.bins[dest].pop();
+    const startBottom = REST_Y + 12 + partInfo(part).h, endBottom = bottomOf(dest) - without.bins[dest].length * 26;
+    const t0 = performance.now();
+    let stopped = false;
+    drawParts(without);
+    drawArm(x, REST_Y, null);
+    const tick = now => {
+      if (stopped) return;
+      const t = Math.min(1, (now - t0) / ms);
+      drawLoose(part, x + (X[dest] - x) * t, startBottom + (endBottom - startBottom) * t * t);
+      if (t < 1) requestAnimationFrame(tick); else { drawLoose(null); drawParts(after); if (done) done(); }
+    };
+    requestAnimationFrame(tick);
+    return { stop() { stopped = true; drawLoose(null); } };
+  }
+  // The bin a slipped part fell into: the one the log names, else the bin that gained a part.
+  function fallenInto(details, before, after) {
+    const named = details && details.destination;
+    if (named && after.bins[named]) return named;
+    return Object.keys(after.bins).find(b => (after.bins[b] || []).length > (before.bins[b] || []).length) || null;
   }
 
   // CELL VIEW END
@@ -396,10 +449,14 @@ The parts and the arm follow the cell state stored after every step.</footer>
       }
     }
     else if (r.event === "step_result") { counters.steps++; planDone++; state = clone(r.state); }
-    else if (r.event === "feedback" && r.kind === "injected failure" && r.details) {
-      const d = r.details, from = stackOf(state, d.source), to = stackOf(state, d.destination);
-      if (from && to && from.includes(d.part)) { from.splice(from.lastIndexOf(d.part), 1); to.push(d.part); }
-      flag = { pos: d.destination, kind: "ask" };
+    else if (r.event === "feedback" && r.kind === "injected failure") {
+      const d = r.details || {};
+      if (r.state) state = clone(r.state);
+      else if (d.source) {  // an older log without the state: work out the moved part
+        const from = stackOf(state, d.source), to = stackOf(state, d.destination);
+        if (from && to && from.includes(d.part)) { from.splice(from.lastIndexOf(d.part), 1); to.push(d.part); }
+      }
+      flag = { pos: r.failure === "pick_failure" ? state.arm : d.destination, kind: "ask" };
     }
     else if (r.event === "intervention") counters.questions++;
     else if (r.event === "run_end" && r.final_state) state = clone(r.final_state);
@@ -431,6 +488,15 @@ The parts and the arm follow the cell state stored after every step.</footer>
       case "feedback":
         if (r.kind === "injected failure") {
           const d = r.details || {};
+          if (r.failure === "pick_failure") {
+            const times = d.times || 1;
+            return { cls: "ask", tag: "Gripper fault:", text: (times === 1 ? "the next pick fails" : "the next " + times + " picks fail") + ": the gripper closes but gets no hold on the part.",
+              detail: "Injected before step " + r.step + ", to show what the system does next." };
+          }
+          if (r.failure === "drop_part") {
+            return { cls: "ask", tag: "Gripper fault:", text: (d.part || "the part") + " slips out of the gripper and falls back into " + (d.destination || "its bin") + ".",
+              detail: "Injected before step " + r.step + ". The gripper is empty now, and the next state shows it." };
+          }
           return { cls: "ask", tag: "Something changed:", text: "someone moves " + d.part + " from " + d.source + " to " + d.destination + ".", detail: "Injected before step " + r.step + ", as in Chapter 13." };
         }
         return { cls: "failure", tag: "Feedback:", text: "the failed step goes back to the planner with the new state.", detail: sentence(r.message) };
@@ -510,11 +576,12 @@ The parts and the arm follow the cell state stored after every step.</footer>
   function renderBanner(f) {
     const d = describe(f), b = document.getElementById("banner");
     b.className = d.cls;
-    b.replaceChildren(el("span", { class: "tag" }, d.tag), d.text, el("span", { class: "detail" }, d.detail));
+    b.title = [d.tag, d.text, d.detail].filter(Boolean).join(" ");
+    b.replaceChildren(el("span", { class: "line" }, el("span", { class: "tag" }, d.tag), d.text), el("span", { class: "detail" }, d.detail));
   }
 
   // Playback
-  let index = 0, timer = null, anim = null;
+  let index = 0, timer = null, anim = null, fall = null;
   const speedSel = document.getElementById("speed"), scrub = document.getElementById("scrub"), playBtn = document.getElementById("play");
   scrub.max = String(frames.length - 1);
   const restPos = s => [X[s.arm] !== undefined ? X[s.arm] : X.HOME, REST_Y];
@@ -523,6 +590,7 @@ The parts and the arm follow the cell state stored after every step.</footer>
     index = Math.max(0, Math.min(frames.length - 1, i));
     const f = frames[index];
     if (anim) { cancelAnimationFrame(anim); anim = null; }
+    if (fall) { fall.stop(); fall = null; }
     renderBanner(f); renderSide(f);
     drawFlag(f.flag && f.flag.pos, f.flag && f.flag.kind);
     scrub.value = String(index);
@@ -533,7 +601,10 @@ The parts and the arm follow the cell state stored after every step.</footer>
     if (cur && (cur.offsetTop < timeline.scrollTop || cur.offsetTop + cur.offsetHeight > timeline.scrollTop + timeline.clientHeight)) {
       timeline.scrollTop = cur.offsetTop - timeline.clientHeight / 2;
     }
-    if (animate && f.kind === "step_result" && f.record.status === "success") animateStep(f);
+    // A failed pick is drawn too: the arm goes down and comes up empty.
+    const failedPick = f.kind === "step_result" && f.record.function === "pick" && f.record.status === "failed";
+    if (animate && f.kind === "step_result" && (f.record.status === "success" || failedPick)) animateStep(f);
+    else if (animate && f.kind === "feedback" && f.record.failure === "drop_part" && f.prev.gripper) animateDrop(f);
     else { drawParts(f.state); const [ax, ay] = restPos(f.state); drawArm(ax, ay, f.state.gripper); }
   }
 
@@ -567,6 +638,14 @@ The parts and the arm follow the cell state stored after every step.</footer>
       };
       anim = requestAnimationFrame(tick);
     } else { drawParts(next); drawArm(x1, REST_Y, next.gripper); }
+  }
+
+  // The held part falls from the gripper into the bin it lands in.
+  function animateDrop(f) {
+    const prev = f.prev, next = f.state, dest = fallenInto(f.record.details, prev, next);
+    const [ax] = restPos(prev);
+    if (!dest || X[dest] === undefined) { drawParts(next); drawArm(ax, REST_Y, next.gripper); return; }
+    fall = fallInto(prev.gripper, ax, dest, next, 700 / Number(speedSel.value), () => { fall = null; });
   }
 
   function holdFor(f) {

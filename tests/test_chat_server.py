@@ -137,3 +137,14 @@ def test_the_chat_page_holds_the_3d_view(tmp_path):
     assert text.count("function createCell3D(") == 1
     assert "__THREE_JS__" not in text and "__CELL3D_JS__" not in text
     assert "view3d.drawStatic()" in text
+
+
+def test_faults_reach_the_order_and_bad_faults_are_refused(tmp_path):
+    s = session(tmp_path, PLAN)
+    assert call(s, "POST", "/api/order", {"text": "x", "faults": ["teleport"]})[0] == 400
+    assert call(s, "POST", "/api/order", {"text": "x", "faults": "pick_failure"})[0] == 400
+    assert call(s, "POST", "/api/order", {"text": "Bolt to slot 4", "faults": ["pick_failure"]})[0] == 200
+    s.wait(5)
+    events = s.events_since()
+    assert events[0]["faults"] == ["pick_failure"]
+    assert any(e["event"] == "feedback" and e.get("failure") == "pick_failure" for e in events)

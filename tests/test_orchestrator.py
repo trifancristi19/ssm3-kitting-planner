@@ -183,6 +183,33 @@ def test_open_loop_stops_safely_at_a_failed_step(cell, chapter6_plan):
     assert operator.messages and "stopped" in operator.messages[0]
 
 
+def test_an_injected_failure_logs_the_state_after_it(cell, chapter6_plan):
+    failures = {7: ("drop_part", {})}
+    summary, log, _ = run(cell, "open loop", FakePlanner(plan(chapter6_plan)), failures=failures)
+    [injected] = log.of_kind("feedback")
+    assert (injected["failure"], injected["step"]) == ("drop_part", 7)
+    assert injected["state"]["gripper"] is None and injected["state"]["bins"]["BIN_3"] == ["SPACER_LONG"]
+
+
+def test_open_loop_stops_when_the_part_slipped_out_before_the_place(cell, chapter6_plan):
+    failures = {7: ("drop_part", {})}
+    summary, log, _ = run(cell, "open loop", FakePlanner(plan(chapter6_plan)), failures=failures)
+    assert summary["outcome"] == "stopped" and summary["steps_run"] == 8
+    last = log.of_kind("step_result")[-1]
+    assert (last["function"], last["status"]) == ("place", "blocked")
+    assert "gripper is empty" in last["message"]
+
+
+def test_a_grip_that_keeps_failing_ends_at_the_step_budget(cell, chapter6_plan):
+    planner = FakePlanner(*[remaining(chapter6_plan)] * 40)
+    failures = {6: ("pick_failure", {"times": 100})}
+    summary, log, _ = run(cell, "closed loop", planner, expected_plan=chapter6_plan, failures=failures)
+    assert summary["outcome"] == "stopped"
+    # The budget of twice the expected plan limits both the steps and the planner calls (DD14).
+    assert summary["reason"] == "18 planner calls without finishing the order"
+    assert [r["status"] for r in log.of_kind("step_result")][5:] == ["failed"] * 13
+
+
 def test_a_question_goes_to_the_operator_and_the_answer_back_to_the_planner(cell, chapter6_plan):
     planner = FakePlanner(json.dumps({"ask": "Which spacer goes in slot 2?"}), plan(chapter6_plan))
     operator = ScriptedOperator(["The long spacer."])

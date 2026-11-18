@@ -16,13 +16,13 @@ def test_all_scenarios_run_without_pauses(tmp_path):
     screen = "\n".join(lines)
     assert demo.PLANNER_NOTE in screen
     outcomes = [summary["outcome"] for summary, _ in results]
-    assert outcomes == ["done", "done", "stopped", "done"]
-    for summary, _ in [results[0], results[1], results[3]]:
+    assert outcomes == ["done", "done", "stopped", "done", "stopped", "done", "stopped", "done"]
+    for summary, _ in [results[0], results[1], results[3], results[5], results[7]]:
         assert summary["final_state"]["slots"]["SLOT_2"] == ["SPACER_LONG"]
         assert summary["final_state"]["slots"]["SLOT_1"] == ["SPACER_BLUE"]
     assert "code PROTECTED_SLOT" in screen and "code PART_COVERED" in screen
     assert "not recovered" in screen
-    assert len(list(tmp_path.glob("*.jsonl"))) == 4
+    assert len(list(tmp_path.glob("*.jsonl"))) == 8
     for _, log in results:
         assert read_log(log.path) == log.records
 
@@ -34,6 +34,31 @@ def test_scenario_1_gives_the_chapter_6_plan(tmp_path, chapter6_plan):
     run = [{"function": r["function"], "args": r["args"]} for r in log.of_kind("step_result")]
     assert run == chapter6_plan
     assert summary["final_state"]["return"] == ["SPACER_SHORT"]
+
+
+def test_scenario_4_a_failed_pick_stops_the_open_loop_and_is_tried_again_in_the_closed_loop(tmp_path):
+    lines = []
+    (open_run, open_log), (closed_run, closed_log) = demo.main(
+        ["--no-pause", "--scenario", "4", "--log-dir", str(tmp_path)], out=lines.append, read=never_read)
+    assert (open_run["outcome"], closed_run["outcome"]) == ("stopped", "done")
+    failed = [r for r in closed_log.of_kind("step_result") if r["status"] == "failed"]
+    assert [(r["step"], r["function"]) for r in failed] == [(6, "pick")]
+    assert "gripper closed but is still empty" in failed[0]["message"]
+    after = closed_log.of_kind("step_result")[6]
+    assert (after["function"], after["args"]["part"], after["status"]) == ("pick", "SPACER_LONG", "success")
+    assert "the next pick fails" in "\n".join(lines)
+
+
+def test_scenario_5_a_part_that_slips_out_is_fetched_again_in_the_closed_loop(tmp_path):
+    lines = []
+    (open_run, open_log), (closed_run, closed_log) = demo.main(
+        ["--no-pause", "--scenario", "5", "--log-dir", str(tmp_path)], out=lines.append, read=never_read)
+    assert open_log.of_kind("step_result")[-1]["status"] == "blocked"
+    assert open_run["final_state"]["bins"]["BIN_3"] == ["SPACER_LONG"]
+    assert closed_run["outcome"] == "done" and closed_run["final_state"]["slots"]["SLOT_2"] == ["SPACER_LONG"]
+    [injected] = closed_log.of_kind("feedback")
+    assert (injected["failure"], injected["step"]) == ("drop_part", 7)
+    assert "SPACER_LONG slips out of the gripper" in "\n".join(lines)
 
 
 def test_pauses_wait_for_enter(tmp_path):

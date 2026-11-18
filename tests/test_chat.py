@@ -35,7 +35,7 @@ def test_a_typed_order_runs_through_the_checker_and_the_cell(tmp_path):
     assert session.state()["slots"]["SLOT_4"] == ["BOLT"]
     events = session.events_since()
     assert events[0] == {"event": "user", "order_id": "C-1", "text": "Put the bolt from BIN_1 in slot 4",
-                         "variant": "open loop", "protected": [], "n": 0}
+                         "variant": "open loop", "protected": [], "faults": [], "n": 0}
     assert [e["n"] for e in events] == list(range(len(events)))
     assert "check_result" in kinds(session) and kinds(session)[-1] == "run_end"
     assert (tmp_path / f"{events[1]['run_id']}.jsonl").exists()
@@ -186,3 +186,40 @@ def test_a_local_model_runs_without_a_key(tmp_path, monkeypatch):
     assert summary is not None and seen[0]["provider"] == "ollama"
     start = next(event for event in session.events_since() if event["event"] == "run_start")
     assert (start["provider"], start["model"]) == ("ollama", "qwen3:8b")
+
+
+# Gripper faults armed for the next order (proposal)
+
+def test_armed_faults_go_off_once_and_the_closed_loop_recovers(tmp_path):
+    from ssm3.demo import scripted_planner
+
+    session = chat.ChatSession(planner=scripted_planner(), log_dir=tmp_path)
+    summary = session.run("Replace the short spacer in slot 2 with a long spacer", "closed",
+                          faults=["drop_part", "pick_failure"])
+    assert summary["outcome"] == "done"
+    events = session.events_since()
+    assert events[0]["faults"] == ["pick_failure", "drop_part"]
+    injected = [e for e in events if e["event"] == "feedback" and e["kind"] == "injected failure"]
+    assert [e["failure"] for e in injected] == ["pick_failure", "drop_part"]
+    # The slip went off before a move with a part in the gripper, and the part fell into its own bin.
+    assert injected[1]["details"] == {"part": "SPACER_SHORT", "destination": "BIN_2"}
+    statuses = [e["status"] for e in events if e["event"] == "step_result"]
+    assert statuses.count("failed") == 1
+    assert session.state()["slots"]["SLOT_2"] == ["SPACER_LONG"]
+    # The next order runs without faults.
+    session.run("Put the bolt from BIN_1 in slot 4", "open")
+    assert not any(e["event"] == "feedback" for e in session.events_since(len(events)))
+
+
+def test_open_loop_stops_at_an_armed_pick_failure(tmp_path):
+    session = chat.ChatSession(planner=answers(BOLT_TO_SLOT_4), log_dir=tmp_path)
+    summary = session.run("Put the bolt from BIN_1 in slot 4", "open", faults=["pick_failure"])
+    assert summary["outcome"] == "stopped" and summary["steps_run"] == 2
+    assert session.state()["bins"]["BIN_1"] == ["BOLT"]
+
+
+def test_unknown_faults_are_refused(tmp_path):
+    session = chat.ChatSession(planner=answers(BOLT_TO_SLOT_4), log_dir=tmp_path)
+    assert session.submit("Put the bolt in slot 4", faults=["explode"]) is False
+    assert session.submit("Put the bolt in slot 4", faults="pick_failure") is False
+    assert session.events_since() == []

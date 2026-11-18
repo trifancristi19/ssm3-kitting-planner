@@ -25,6 +25,10 @@ The rules of the loop:
   step each time still finishes the whole order.
 - The step budget is twice the number of steps of the expected plan, or max_steps
   from the capability file for an order without an expected plan (DD14, DD21).
+- Failures can be injected before a given step (failures, FR11), or armed for the
+  first step they fit (faults, proposal, for chat mode where the plan is not known
+  in advance): a pick failure goes off before the next pick, a slip before the next
+  move while the gripper holds a part.
 - A provider error or rate limit is logged as a provider_limit event and ends the
   attempt (DD14). The run is then repeated at most three times and marked not run
   after that, so free-tier limits do not count as planner failures (DD21).
@@ -41,10 +45,13 @@ from ssm3.checker import check
 # catches exactly the class call_model raises (DD14), and callers can still import it from this module.
 from ssm3.planner import ProviderLimit, ResponseFormatError, parse_response
 
-__all__ = ["PROVIDER_REPEATS", "REJECTS_BEFORE_ASKING", "VARIANTS", "ProviderLimit", "run_order",
+__all__ = ["FAULTS", "PROVIDER_REPEATS", "REJECTS_BEFORE_ASKING", "VARIANTS", "ProviderLimit", "run_order",
            "run_with_provider_repeats", "step_budget"]
 
 VARIANTS = ("open loop", "closed loop")
+
+# The failures that can be armed for the first step they fit (proposal, chat mode).
+FAULTS = ("pick_failure", "drop_part")
 
 # Repeats after the first attempt, so at most four attempts in total (DD21).
 PROVIDER_REPEATS = 3
@@ -78,7 +85,7 @@ def run_with_provider_repeats(run):
 class _Run:
     """The state of one run of run_order."""
 
-    def __init__(self, order, variant, planner, cell, operator, log, protected, budget, failures):
+    def __init__(self, order, variant, planner, cell, operator, log, protected, budget, failures, faults):
         self.order = order
         self.variant = variant
         self.planner = planner
@@ -88,6 +95,7 @@ class _Run:
         self.protected = tuple(protected)
         self.budget = budget
         self.failures = dict(failures or {})
+        self.faults = list(faults or ())
         self.history = []
         self.steps_run = 0
         self.planner_calls = 0
@@ -154,9 +162,10 @@ class _Run:
                 return self.finish("stopped", f"the step budget of {self.budget} steps is used up")
             self.steps_run += 1
             if self.steps_run in self.failures:
-                kind, details = self.failures[self.steps_run]
-                self.cell.inject_failure(kind, **details)
-                self.log.event("feedback", kind="injected failure", step=self.steps_run, failure=kind, details=details)
+                self.inject(*self.failures[self.steps_run])
+            armed = self.armed_fault(step)
+            if armed:
+                self.inject(*armed)
             name, args = step["function"], step["args"]
             result = getattr(functions, name)(self.cell, **args)
             self.log.event("step_result", step=self.steps_run, function=name, args=args, status=result.status,
@@ -174,6 +183,24 @@ class _Run:
         if self.variant == "open loop":
             return self.finish("done", "the last step of the plan is done")
         # The closed loop always asks the planner again, and ends only on an empty plan (proposal, OD14).
+        return None
+
+    def inject(self, kind, details):
+        self.cell.inject_failure(kind, **details)
+        # The state after the change goes into the log, so the replay shows it whatever the kind.
+        self.log.event("feedback", kind="injected failure", step=self.steps_run, failure=kind, details=details,
+                       state=self.cell.state())
+
+    def armed_fault(self, step):
+        """The first armed fault that fits this step, as (kind, details), and it is used up. Else None."""
+        held = self.cell.state()["gripper"]
+        for kind in self.faults:
+            if kind == "pick_failure" and step["function"] == "pick":
+                self.faults.remove(kind)
+                return kind, {}
+            if kind == "drop_part" and step["function"] == "move_to" and held is not None:
+                self.faults.remove(kind)
+                return kind, {"part": held, "destination": self.cell.capability["parts"].get(held)}
         return None
 
     def loop(self):
@@ -218,7 +245,7 @@ class _Run:
 
 
 def run_order(order, variant, *, planner, cell, operator, log, protected=(), expected_plan=None, failures=None,
-              info=None):
+              faults=(), info=None):
     """Run one order from planning to the final tray and return its summary.
 
     order is {"order_id": ..., "text": ...}. variant is "open loop" or "closed loop".
@@ -227,7 +254,8 @@ def run_order(order, variant, *, planner, cell, operator, log, protected=(), exp
     lists the slots the order keeps unchanged (from the task set). expected_plan
     sets the step budget. failures maps a step number to a failure that is injected
     just before that step runs, as (kind, details) for SimulatedCell.inject_failure
-    (FR11). info is stored in the run_start record, for the model, its settings and
+    (FR11). faults lists failures from FAULTS that go off at the first step they fit,
+    each once (proposal, chat mode). info is stored in the run_start record, for the model, its settings and
     the prompt version (Table 11).
 
     The summary holds the outcome ("done", "refused" or "stopped"), the reason, the
@@ -237,10 +265,14 @@ def run_order(order, variant, *, planner, cell, operator, log, protected=(), exp
     """
     if variant not in VARIANTS:
         raise ValueError(f"unknown variant {variant!r}, expected one of {VARIANTS}")
+    unknown = [kind for kind in faults if kind not in FAULTS]
+    if unknown:
+        raise ValueError(f"unknown faults {unknown!r}, expected some of {FAULTS}")
     budget = step_budget(cell.capability, expected_plan)
     log.event("run_start", order_id=order.get("order_id"), instruction=order["text"], variant=variant,
-              protected=list(protected), step_budget=budget, **(info or {}))
-    run = _Run(order, variant, planner, cell, operator, log, protected, budget, failures)
+              protected=list(protected), step_budget=budget, **({"faults": list(faults)} if faults else {}),
+              **(info or {}))
+    run = _Run(order, variant, planner, cell, operator, log, protected, budget, failures, faults)
     try:
         return run.loop()
     except ProviderLimit as error:

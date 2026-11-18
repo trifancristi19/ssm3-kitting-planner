@@ -8,7 +8,10 @@ through Ollama with --local), the checker, the
 orchestrator loop, the simulated cell and the run log. The cell keeps its state
 from one order to the next, so a second order starts where the first one ended.
 A question of the planner or the checker comes back to the chat, and the answer
-the operator types goes back to the loop.
+the operator types goes back to the loop. The operator can also arm a gripper
+fault for the next order: the next pick fails, or the held part slips out on the
+next move. The real model then has to notice the failure and recover, in the
+closed loop, the way scenarios 4 and 5 of the demo show with a scripted planner.
 
 This module holds the session. chat_server.py puts a local web page in front of
 it. Every order with the model on Groq uses the Groq free-tier limit. The tests give
@@ -24,7 +27,7 @@ from ssm3.cell import SimulatedCell
 from ssm3.console import NO_FURTHER_INFORMATION
 from ssm3.demo import ROOT, chapter_13_state, demo_capability, paced
 from ssm3.logger import RunLog
-from ssm3.orchestrator import run_order
+from ssm3.orchestrator import FAULTS, run_order
 
 VARIANTS = {"open": "open loop", "closed": "closed loop"}
 
@@ -139,20 +142,29 @@ class ChatSession:
         """True when protected is a list of tray slots of this cell."""
         return isinstance(protected, list | tuple) and all(slot in self.slots() for slot in protected)
 
-    def run(self, text, variant="open", protected=()):
+    @staticmethod
+    def known_faults(faults):
+        """True when faults is a list of gripper faults the loop can arm (orchestrator.FAULTS)."""
+        return isinstance(faults, list | tuple) and all(fault in FAULTS for fault in faults)
+
+    def run(self, text, variant="open", protected=(), faults=()):
         """Run one typed order to the end and return its summary, or None when it could not run.
 
         protected lists the tray slots the operator ticked as "keep unchanged". The checker
         enforces them (PROTECTED_SLOT, Table 9), whatever the order text says, the same
-        way the task set protects slots in the experiment.
+        way the task set protects slots in the experiment. faults lists the gripper faults
+        armed for this order (orchestrator.FAULTS), each going off once.
         """
         if not self.known_slots(protected):
             raise ValueError(f"protected must list tray slots of the cell, got {protected!r}")
+        if not self.known_faults(faults):
+            raise ValueError(f"faults must list some of {FAULTS}, got {faults!r}")
+        faults = [fault for fault in FAULTS if fault in faults]
         protected = [slot for slot in self.slots() if slot in protected]
         self.orders += 1
         order = {"order_id": f"C-{self.orders}", "text": text}
         self.add({"event": "user", "order_id": order["order_id"], "text": text, "variant": VARIANTS[variant],
-                  "protected": protected})
+                  "protected": protected, "faults": faults})
         if self.uses_model:
             try:
                 planner_module.check_access(self.settings)
@@ -167,18 +179,19 @@ class ChatSession:
                         prompt_version=planner_module.PROMPT_VERSION)
         try:
             return run_order(order, VARIANTS[variant], planner=self._make_planner(), cell=self.cell,
-                             operator=ChatOperator(self), log=log, protected=protected, info=info)
+                             operator=ChatOperator(self), log=log, protected=protected, faults=faults, info=info)
         except planner_module.ModelError as error:
             self.add({"event": "error", "reason": f"{type(error).__name__}: {error}"})
             return None
 
-    def submit(self, text, variant="open", protected=()):
+    def submit(self, text, variant="open", protected=(), faults=()):
         """Start an order in the background.
 
-        Returns False when the text is empty, the variant or a protected slot is unknown, or an order still runs.
+        Returns False when the text is empty, the variant, a protected slot or a fault is unknown, or an order
+        still runs.
         """
         text = (text or "").strip()
-        if not text or variant not in VARIANTS or not self.known_slots(protected):
+        if not text or variant not in VARIANTS or not self.known_slots(protected) or not self.known_faults(faults):
             return False
         with self._lock:
             if self.busy:
@@ -187,7 +200,7 @@ class ChatSession:
 
         def work():
             try:
-                self.run(text, variant, protected)
+                self.run(text, variant, protected, faults)
             except Exception as error:  # the chat must say what went wrong, not stop silently
                 self.add({"event": "error", "reason": f"{type(error).__name__}: {error}"})
             finally:

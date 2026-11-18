@@ -1,7 +1,7 @@
 """Terminal demo for the client meeting at Gate A (Design Document, Chapters 6, 9 and 13).
 
 The demo runs the worked example of Chapter 13 through the real cell, checker,
-orchestrator loop and run log. The three scenarios use a scripted planner, which
+orchestrator loop and run log. The five scenarios use a scripted planner, which
 reads the cell state and writes a plan from it, so they call no language model and
 no network. The loop, the checker and the feedback are the same code the language
 model uses.
@@ -17,7 +17,12 @@ Run it from the repository folder on Windows with:
     .venv\\Scripts\\python scripts\\demo.py
     .venv\\Scripts\\python scripts\\demo.py --live
 
-Options: --no-pause runs without the "press Enter" pauses, --scenario 1, 2 or 3
+Scenarios 4 and 5 answer a question of Mrs Johnson at Gate A: what happens when a
+step is allowed but the gripper fails, because it gets no hold on the part or the
+part slips out after it was lifted. Each runs in both loops, so the log shows the
+failed step, the feedback and what the system did next.
+
+Options: --no-pause runs without the "press Enter" pauses, --scenario 1 to 5
 runs one scenario, and --log-dir sets the folder for the run logs (demo_logs by
 default, which git ignores). With --live: --variant open runs the open loop (one
 model call), --model changes the model and --delay sets the seconds between model
@@ -208,9 +213,7 @@ def describe(record):
         return f"    step {record['step']:>2}  {_call(record['function'], record['args']):<50} {record['status']}"
     if kind == "feedback":
         if record["kind"] == "injected failure":
-            details = record["details"]
-            return (f"    ! Injected: {details['part']} moved from {details['source']} to {details['destination']} "
-                    "after planning")
+            return "    ! Injected: " + injected_text(record)
         return f"    ! Failure sent back to the planner: {record['message']}"
     if kind == "intervention":
         return f"  Operator asked ({record['kind']}): {record['question']}\n  Operator answer: {record['answer']}"
@@ -221,6 +224,21 @@ def describe(record):
     if kind == "provider_limit":
         return f"Provider limit: {record['reason']}"
     return f"{kind}: {record}"
+
+
+def injected_text(record):
+    """One line for an injected failure, for each kind of the cell (FR11)."""
+    details = record.get("details") or {}
+    if record.get("failure") == "pick_failure":
+        times = details.get("times", 1)
+        which = "the next pick fails" if times == 1 else f"the next {times} picks fail"
+        return f"{which}: the gripper closes but gets no hold on the part"
+    if record.get("failure") == "drop_part":
+        part = details.get("part", "the held part")
+        where = details.get("destination", "its bin")
+        return f"{part} slips out of the gripper after the lift and falls back into {where}"
+    return (f"{details.get('part')} moved from {details.get('source')} to {details.get('destination')} "
+            "after planning")
 
 
 def render(records):
@@ -316,6 +334,50 @@ def scenario_3(log_dir, out, pause):
         if variant == "open loop":
             pause()
     return results
+
+
+def _step_of(plan, function, part=None, after=None):
+    """The step number (from 1) of the first step with this function, and part if given, after step `after`."""
+    for number, step in enumerate(plan, start=1):
+        if number > (after or 0) and step["function"] == function and step["args"].get("part", part) == part:
+            return number
+    raise ValueError(f"no {function} step in the plan")
+
+
+def _both_loops(log_dir, name, failures, out, pause):
+    capability = demo_capability()
+    expected = plan_from_state(chapter_13_state(capability))["plan"]
+    results = []
+    for variant in ("open loop", "closed loop"):
+        out("")
+        out(f"--- {variant} ---")
+        summary, log = _run(log_dir, name, variant, scripted_planner(), chapter_13_state(capability), out,
+                            expected_plan=expected, failures=failures)
+        out(tray_view(summary["final_state"], "Tray after:"))
+        results.append((summary, log))
+        if variant == "open loop":
+            pause()
+    return results
+
+
+def scenario_4(log_dir, out, pause):
+    out("Scenario 4: the gripper gets no hold on the long spacer")
+    expected = plan_from_state(chapter_13_state(demo_capability()))["plan"]
+    step = _step_of(expected, "pick", "SPACER_LONG")
+    out(f"The checker allows the plan, but the pick of step {step} fails, as with a part of an awkward shape.")
+    out("The open loop stops safely (DD16). The closed loop sends the failure to the planner, which tries again.")
+    return _both_loops(log_dir, "4", {step: ("pick_failure", {})}, out, pause)
+
+
+def scenario_5(log_dir, out, pause):
+    out("Scenario 5: the long spacer slips out of the gripper after the lift")
+    expected = plan_from_state(chapter_13_state(demo_capability()))["plan"]
+    step = _step_of(expected, "move_to", after=_step_of(expected, "pick", "SPACER_LONG"))
+    out(f"Before step {step}, the move to the tray, the spacer falls back into BIN_3, as a heavy part might.")
+    out("The open loop places with an empty gripper, which fails, and stops. The closed loop sees the empty")
+    out("gripper in the new state and fetches the spacer again.")
+    drop = {step: ("drop_part", {"part": "SPACER_LONG", "destination": "BIN_3"})}
+    return _both_loops(log_dir, "5", drop, out, pause)
 
 
 # Live mode with the real model
@@ -424,7 +486,7 @@ def live_demo(args, out, read, sleep):
 def main(argv=None, out=print, read=input, sleep=time.sleep, show=webbrowser.open):
     parser = argparse.ArgumentParser(description="Gate A demo: the cell, checker and loop with a scripted planner")
     parser.add_argument("--no-pause", action="store_true", help="run without the press Enter pauses")
-    parser.add_argument("--scenario", type=int, choices=(1, 2, 3), help="run only this scenario")
+    parser.add_argument("--scenario", type=int, choices=(1, 2, 3, 4, 5), help="run only this scenario")
     parser.add_argument("--log-dir", default=str(ROOT / "demo_logs"), help="folder for the run logs")
     parser.add_argument("--live", action="store_true", help="run the order once with the real model on Groq")
     parser.add_argument("--variant", choices=("closed", "open"), default="closed", help="loop for --live")
@@ -456,8 +518,10 @@ def main(argv=None, out=print, read=input, sleep=time.sleep, show=webbrowser.ope
         out("No language model and no API calls are used in this demo.")
         scenarios = {1: lambda: scenario_1(args.log_dir, out),
                      2: lambda: scenario_2(args.log_dir, out),
-                     3: lambda: scenario_3(args.log_dir, out, pause)}
-        chosen = [args.scenario] if args.scenario else [1, 2, 3]
+                     3: lambda: scenario_3(args.log_dir, out, pause),
+                     4: lambda: scenario_4(args.log_dir, out, pause),
+                     5: lambda: scenario_5(args.log_dir, out, pause)}
+        chosen = [args.scenario] if args.scenario else [1, 2, 3, 4, 5]
         results = []
         for number in chosen:
             pause()

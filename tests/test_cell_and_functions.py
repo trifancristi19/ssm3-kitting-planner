@@ -452,3 +452,32 @@ def test_place_reason_says_what_the_gripper_holds(cell):
     _hold(cell, "SPACER_LONG", "BIN_3")
     move_to(cell, "SLOT_4")
     assert place(cell, "BOLT", "SLOT_4").message == "The gripper holds SPACER_LONG, not BOLT"
+
+
+def test_a_pick_failure_can_repeat_a_number_of_times(cell):
+    move_to(cell, "BIN_3")
+    cell.inject_failure("pick_failure", times=2)
+    assert [pick(cell, "SPACER_LONG", "BIN_3").status for _ in range(3)] == ["failed", "failed", "success"]
+    for times in (0, -1, True, 1.5):
+        with pytest.raises(ValueError):
+            cell.inject_failure("pick_failure", times=times)
+
+
+def test_a_dropped_part_falls_back_into_its_bin(cell):
+    move_to(cell, "BIN_3")
+    pick(cell, "SPACER_LONG", "BIN_3")
+    cell.inject_failure("drop_part")
+    state = cell.state()
+    assert state["gripper"] is None
+    assert state["bins"]["BIN_3"] == ["SPACER_LONG"]
+
+
+def test_a_drop_can_name_another_bin_but_needs_a_held_part(cell):
+    with pytest.raises(ValueError, match="gripper is empty"):
+        cell.inject_failure("drop_part")
+    move_to(cell, "BIN_3")
+    pick(cell, "SPACER_LONG", "BIN_3")
+    with pytest.raises(ValueError, match="not a bin"):
+        cell.inject_failure("drop_part", destination="SLOT_4")
+    cell.inject_failure("drop_part", destination="BIN_1")
+    assert cell.state()["bins"]["BIN_1"] == ["SPACER_LONG"]

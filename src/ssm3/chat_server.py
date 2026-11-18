@@ -79,7 +79,10 @@ def handle(session, method, path, body=b"", content_type="", host="127.0.0.1"):
             protected = data.get("protected", [])
             if not session.known_slots(protected):
                 return _json(400, {"ok": False, "error": "protected must list tray slots of the cell"})
-            started = session.submit(str(data.get("text", "")), str(data.get("variant", "open")), protected)
+            faults = data.get("faults", [])
+            if not session.known_faults(faults):
+                return _json(400, {"ok": False, "error": "faults must list known gripper faults"})
+            started = session.submit(str(data.get("text", "")), str(data.get("variant", "open")), protected, faults)
             return _json(200 if started else 409, {"ok": started,
                                                    "error": None if started else "Empty order, or an order still runs"})
         if url.path == "/api/answer":

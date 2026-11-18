@@ -94,8 +94,21 @@ def test_the_page_holds_three_js_and_the_3d_view_once(tmp_path):
     assert not re.search(r"__(TITLE|DATA|THREE_JS|CELL3D_JS)__", page)
     # The 2D drawing hands every call to the 3D view as well
     for call in ("view3d.drawStatic()", "view3d.drawParts(state)", "view3d.drawArm(ax, ay, holding)",
-                 "view3d.drawFlag(pos, kind)"):
+                 "view3d.drawFlag(pos, kind)", "view3d.drawLoose(name, cx, bottom)"):
         assert call in page
+    # Both views draw the arm from one pose function, and the gantry of the first demo is gone.
+    assert page.count("function cellArmPose(") == 1
+    assert "cellArmPose({ W, TABLE }, ax, ay)" in page and "cellArmPose(L, ax, ay)" in page
+    source = viewer.PAGE_FILE.read_text(encoding="utf-8") + viewer.CELL3D_FILE.read_text(encoding="utf-8")
+    assert "RAIL" not in source
+
+
+def test_a_replay_of_a_gripper_fault_has_its_own_words(tmp_path):
+    results = demo.main(["--no-pause", "--scenario", "5", "--log-dir", str(tmp_path)], out=lambda line: None,
+                        read=never_read)
+    page = results[-1][1].path.with_suffix(".html").read_text(encoding="utf-8")
+    assert '"failure": "drop_part"' in page and "slips out of the gripper" in page
+    assert "function animateDrop(" in page
 
 
 def test_the_vendored_library_keeps_its_licence_and_cannot_end_a_script_element():

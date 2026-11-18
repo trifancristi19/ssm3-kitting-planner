@@ -3,7 +3,8 @@
 A state-based Python model of the cell: fixed supply bins, a tray with numbered
 slots, a return position, a gripper that holds one part and the arm position.
 The simulator is the authoritative source of the cell state (Table 2), and it can
-inject failures, such as a part moved after planning (FR11).
+inject failures, such as a part moved after planning, a pick that fails or a part
+that slips out of the gripper (FR11).
 
 The state is a plain dict that can go straight to JSON (Chapter 6). Bins and slots
 map a name to a list of part IDs, "return" is a list, "gripper" is a part ID or
@@ -18,7 +19,7 @@ changes the state, apart from inject_failure.
 
 import copy
 
-FAILURE_KINDS = ("move_part", "pick_failure")
+FAILURE_KINDS = ("move_part", "pick_failure", "drop_part")
 
 # The level names of a tray slot, from the base up (DD18, proposal).
 LEVELS = ("base", "top")
@@ -54,7 +55,7 @@ class SimulatedCell:
         level_names(capability)  # a capability file with an unsupported number of levels fails here
         self.capability = capability
         self._state = copy.deepcopy(state)
-        self._pick_failure_pending = False
+        self._pick_failures_pending = 0
 
     def state(self):
         """Return a deep copy of the current cell state (Table 7, cell state)."""
@@ -129,27 +130,48 @@ class SimulatedCell:
         self._state["gripper"] = None
 
     def consume_pick_failure(self):
-        """Return True once if a pick failure was injected, then clear it."""
-        pending = self._pick_failure_pending
-        self._pick_failure_pending = False
-        return pending
+        """Return True if an injected pick failure is still pending, and use one up."""
+        if self._pick_failures_pending <= 0:
+            return False
+        self._pick_failures_pending -= 1
+        return True
 
     # Failure injection
 
-    def inject_failure(self, kind, part=None, source=None, destination=None):
+    def inject_failure(self, kind, part=None, source=None, destination=None, times=1):
         """Change the cell outside the plan (FR11, Chapter 9).
 
         "move_part" moves a part from source to destination, as if someone moved
         it after planning. A part with another part on top of it cannot be moved.
         In a slot the part lands on the lowest free level. "pick_failure" makes the
-        next pick return failed.
+        next pick return failed, or the next `times` picks, as a gripper that cannot
+        get hold of an awkward part. "drop_part" empties the gripper: the held part
+        slips out and falls back into destination, by default the bin the capability
+        file names for it, as if it slipped just after it was lifted (proposal). part,
+if given, must be the held part, so a scenario says in its log what slipped.
         """
         if kind == "pick_failure":
-            self._pick_failure_pending = True
+            if isinstance(times, bool) or not isinstance(times, int) or times < 1:
+                raise ValueError(f"times must be a whole number of at least 1, not {times!r}")
+            self._pick_failures_pending = times
         elif kind == "move_part":
             self._move_part(part, source, destination)
+        elif kind == "drop_part":
+            self._drop_part(part, destination)
         else:
             raise ValueError(f"unknown failure kind {kind!r}, expected one of {FAILURE_KINDS}")
+
+    def _drop_part(self, part, destination):
+        held = self._state["gripper"]
+        if held is None:
+            raise ValueError("the gripper is empty, so nothing can slip out of it")
+        if part is not None and part != held:
+            raise ValueError(f"the gripper holds {held!r}, not {part!r}")
+        destination = destination or self.capability["parts"].get(held)
+        if not self.is_bin(destination):
+            raise ValueError(f"a dropped part falls into a bin, and {destination!r} is not a bin")
+        self._state["gripper"] = None
+        self._contents_list(destination).append(held)
 
     def _move_part(self, part, source, destination):
         if part not in self._contents_list(source):

@@ -1,12 +1,41 @@
 // 3D view of the kitting cell, used by the replay page and the chat page (proposal, asked for by Mrs Johnson at
 // Gate A). It draws with three.js (vendor/three.min.js, MIT licence, see vendor/three.LICENSE).
 //
-// It gets the same four drawing calls as the 2D view in viewer_page.html (drawStatic, drawParts, drawArm and
-// drawFlag) with the same layout numbers, so one piece of code animates both views and they always show the same
+// It gets the same drawing calls as the 2D view in viewer_page.html (drawStatic, drawParts, drawArm, drawFlag and
+// drawLoose) with the same layout numbers, so one piece of code animates both views and they always show the same
 // state. The units are those of the 2D drawing: x runs along the cell as in the 2D view, the height is TABLE minus
 // the 2D y, and z points from the back of the table to the front.
 //
 // createCell3D returns null when three.js or WebGL is not available, and the pages then keep the 2D view.
+
+// The arm is a six-axis arm on the middle of the table, shaped like the Doosan M0609 in the lab (proposal, the arm
+// is not chosen yet). The shape and the sizes are approximate and not to scale. cellArmPose works out where the joints
+// are for a gripper position of the 2D drawing: the base turns towards the target, the shoulder and the elbow reach
+// it as two links, and the wrist keeps the gripper pointing straight down. Both views use it, so they draw the same
+// pose. It returns points as [x, height, z], with x from the middle of the cell, as in the 3D view.
+const CELL_ARM = { baseZ: -115, shoulder: 110, upper: 300, fore: 265, wrist: 55, flangeAbove: 46 };
+function cellArmPose(L, ax, ay) {
+  "use strict";
+  const A = CELL_ARM;
+  const fx = ax - L.W / 2, fz = 0, fy = L.TABLE - ay + A.flangeAbove;
+  const yaw = Math.atan2(fx, fz - A.baseZ);
+  const reach = Math.hypot(fx, fz - A.baseZ), rise = fy + A.wrist - A.shoulder;
+  // A target out of reach is clamped, so the arm stretches towards it instead of breaking.
+  const d = Math.min(A.upper + A.fore - 1, Math.max(Math.abs(A.upper - A.fore) + 1, Math.hypot(reach, rise)));
+  const toWrist = Math.atan2(rise, reach);
+  const lift = toWrist + Math.acos((A.upper * A.upper + d * d - A.fore * A.fore) / (2 * A.upper * d));
+  const at = (radial, height) => [radial * Math.sin(yaw), height, A.baseZ + radial * Math.cos(yaw)];
+  const wrist = at(d * Math.cos(toWrist), A.shoulder + d * Math.sin(toWrist));
+  return {
+    yaw,
+    base: [0, 0, A.baseZ],
+    shoulder: [0, A.shoulder, A.baseZ],
+    elbow: at(A.upper * Math.cos(lift), A.shoulder + A.upper * Math.sin(lift)),
+    wrist,
+    flange: [wrist[0], wrist[1] - A.wrist, wrist[2]],
+  };
+}
+
 function createCell3D(host, L) {
   "use strict";
   if (typeof THREE === "undefined") return null;
@@ -21,7 +50,6 @@ function createCell3D(host, L) {
   const ASPECT = 2.1;
   const wx = x => x - L.W / 2;
   const hy = y => L.TABLE - y;
-  const BACK = -125;
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
@@ -45,9 +73,11 @@ function createCell3D(host, L) {
   sun.shadow.normalBias = 0.6;
   scene.add(sun);
 
+  const BASE = CELL_ARM.baseZ;
   const staticGroup = new THREE.Group(), partGroup = new THREE.Group(), flagGroup = new THREE.Group();
+  const looseGroup = new THREE.Group();
   let armGroup = new THREE.Group();
-  scene.add(staticGroup, partGroup, flagGroup, armGroup);
+  scene.add(staticGroup, partGroup, looseGroup, flagGroup, armGroup);
 
   // Colours come from the CSS colour tokens of the page, so the 3D view follows light and dark mode.
   const probe = document.createElement("canvas").getContext("2d");
@@ -141,14 +171,18 @@ function createCell3D(host, L) {
     // The table and the tray get some of the steel colour, so they stand out from the page in light mode too.
     const dark = colour("--bg").getHSL({}).l < 0.5;
     const tray = solid(colour("--tray").lerp(colour("--steel"), dark ? 0.25 : 0.5));
-    // Table
-    staticGroup.add(box(L.W - 40, 14, 300, solid(colour("--table").lerp(colour("--steel"), dark ? 0.2 : 0.6), { roughness: 0.9 }),
-      0, -7.8, 0, false));  // top just below 0, so the bins, tray and pad never share a face with it (no flicker)
-    // Gantry: two posts at the back and the rail the arm runs on
-    const postH = hy(L.RAIL - 20);
-    staticGroup.add(box(14, postH, 14, steel, wx(31), postH / 2, BACK));
-    staticGroup.add(box(14, postH, 14, steel, wx(L.W - 31), postH / 2, BACK));
-    staticGroup.add(box(L.W - 62, 12, 14, steel, 0, hy(L.RAIL), BACK));
+    // Table, deep enough at the back for the foot of the arm
+    staticGroup.add(box(L.W - 40, 14, 340, solid(colour("--table").lerp(colour("--steel"), dark ? 0.2 : 0.6), { roughness: 0.9 }),
+      0, -7.8, -20, false));  // top just below 0, so the bins, tray and pad never share a face with it (no flicker)
+    // The foot of the arm: a plate bolted to the table and the first joint, which turns the arm
+    staticGroup.add(box(86, 8, 86, steel, 0, 4, BASE));
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(33, 36, CELL_ARM.shoulder - 8, 40), armBody());
+    foot.position.set(0, 8 + (CELL_ARM.shoulder - 8) / 2, BASE);
+    foot.castShadow = true;
+    staticGroup.add(foot);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(34.5, 34.5, 10, 40), solid(colour("--steel"), { metalness: 0.5, roughness: 0.3 }));
+    band.position.set(0, 40, BASE);
+    staticGroup.add(band);
     // HOME
     staticGroup.add(box(60, 4, 60, steel, wx(L.X.HOME), 2, 0));
     staticGroup.add(flatText("HOME", 17, ink, wx(L.X.HOME), 76));
@@ -252,42 +286,93 @@ function createCell3D(host, L) {
     render();
   }
 
-  // The arm: a carriage on the rail, a beam to the front, a column and the gripper. drawArm only moves it.
+  // The arm (see cellArmPose): dark links and joints, a light flange and a two-finger gripper. drawArm only moves it.
+  function armBody() {
+    const dark = colour("--bg").getHSL({}).l < 0.5;
+    return solid(colour("--arm").lerp(colour("--steel"), dark ? 0.15 : 0), { metalness: 0.25, roughness: 0.45 });
+  }
   const arm = {};
+  const UP = new THREE.Vector3(0, 1, 0);
+  const vec = p => new THREE.Vector3(p[0], p[1], p[2]);
+  function rod(radius, material) {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 1, 32), material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    armGroup.add(mesh);
+    return mesh;
+  }
+  // A link from point a to point b, or a joint of a given length across the arm
+  function between(mesh, a, b) {
+    const dir = vec(b).sub(vec(a));
+    mesh.position.copy(vec(a).add(vec(b)).multiplyScalar(0.5));
+    mesh.scale.y = Math.max(0.01, dir.length());
+    mesh.quaternion.setFromUnitVectors(UP, dir.normalize());
+  }
+  function across(mesh, p, axis, length) {
+    mesh.position.copy(vec(p));
+    mesh.scale.y = length;
+    mesh.quaternion.setFromUnitVectors(UP, axis);
+  }
   function buildArm() {
     clear(armGroup);
-    const dark = solid(colour("--steel-dark"), { metalness: 0.4, roughness: 0.4 });
-    const light = solid(colour("--steel"), { metalness: 0.45, roughness: 0.35 });
-    arm.carriage = box(68, 32, 30, dark, 0, hy(L.RAIL), BACK + 20);
-    arm.beam = box(16, 14, -BACK - 4, dark, 0, hy(L.RAIL) - 4, BACK / 2);
-    arm.column = box(12, 1, 12, light, 0, 0, 0);
-    arm.bar = box(60, 10, 26, dark, 0, 0, 0);
-    arm.left = box(5, 18, 20, dark, 0, 0, 0);
-    arm.right = box(5, 18, 20, dark, 0, 0, 0);
-    armGroup.add(arm.carriage, arm.beam, arm.column, arm.bar, arm.left, arm.right);
+    const body = armBody();
+    const light = solid(colour("--steel"), { metalness: 0.5, roughness: 0.3 });
+    const grip = solid(colour("--steel").lerp(new THREE.Color(0xffffff), 0.45), { metalness: 0.3, roughness: 0.4 });
+    const finger = solid(new THREE.Color(0x1d232b), { roughness: 0.6 });
+    arm.shoulder = rod(34, body);
+    arm.upper = rod(24, body);
+    arm.elbow = rod(27, body);
+    arm.fore = rod(19, body);
+    arm.wrist = rod(21, body);
+    arm.down = rod(17, body);
+    arm.flange = rod(21, light);
+    arm.grip = box(38, 36, 32, grip, 0, 0, 0);
+    arm.left = box(6, 18, 16, finger, 0, 0, 0);
+    arm.right = box(6, 18, 16, finger, 0, 0, 0);
+    armGroup.add(arm.grip, arm.left, arm.right);
     arm.held = null;
     arm.heldName = null;
   }
   let lastArm = null;
   function drawArm(ax, ay, holding) {
     lastArm = [ax, ay, holding];
-    const x = wx(ax);
-    const top = hy(L.RAIL) - 10, barTop = hy(ay - 12);
-    arm.carriage.position.x = x;
-    arm.beam.position.x = x;
-    arm.column.scale.y = Math.max(1, top - barTop);
-    arm.column.position.set(x, (top + barTop) / 2, 0);
-    arm.bar.position.set(x, hy(ay - 7), 0);
+    const p = cellArmPose(L, ax, ay);
+    const axis = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
+    across(arm.shoulder, p.shoulder, axis, 74);
+    between(arm.upper, p.shoulder, p.elbow);
+    across(arm.elbow, p.elbow, axis, 60);
+    between(arm.fore, p.elbow, p.wrist);
+    across(arm.wrist, p.wrist, axis, 48);
+    between(arm.down, p.wrist, p.flange);
+    arm.flange.position.set(p.flange[0], p.flange[1] - 3, p.flange[2]);
+    arm.flange.scale.y = 6;
+    arm.flange.quaternion.identity();
+    // The gripper hangs from the flange. ay is worked out again from the pose, in case the target was out of reach.
+    const x = p.flange[0], z = p.flange[2];
+    ay = L.TABLE + CELL_ARM.flangeAbove - p.flange[1];
+    arm.grip.position.set(x, hy(ay - 22), z);
     const open = holding ? L.partInfo(holding).w / 2 + 4 : 24;
-    arm.left.position.set(x - open - 2.5, hy(ay + 5), 0);
-    arm.right.position.set(x + open + 2.5, hy(ay + 5), 0);
+    arm.left.position.set(x - open - 3, hy(ay + 5), z);
+    arm.right.position.set(x + open + 3, hy(ay + 5), z);
     if (arm.heldName !== (holding || null)) {
       if (arm.held) { const old = new THREE.Group(); old.add(arm.held); clear(old); }
       arm.held = holding ? partMesh(holding) : null;
       arm.heldName = holding || null;
       if (arm.held) armGroup.add(arm.held);
     }
-    if (arm.held) arm.held.position.set(x, hy(ay + 12 + L.partInfo(holding).h / 2), 0);
+    if (arm.held) arm.held.position.set(x, hy(ay + 12 + L.partInfo(holding).h / 2), z);
+    render();
+  }
+
+  // A loose part on its way down, when a part slips out of the gripper. A name of null clears it.
+  let looseName = null;
+  function drawLoose(name, cx, bottom) {
+    if (name !== looseName) {
+      clear(looseGroup);
+      if (name) looseGroup.add(partMesh(name));
+      looseName = name || null;
+    }
+    if (name) looseGroup.children[0].position.set(wx(cx), hy(bottom - L.partInfo(name).h / 2), 0);
     render();
   }
 
@@ -316,8 +401,8 @@ function createCell3D(host, L) {
   }
 
   // Camera: drag to turn, Ctrl + scroll to zoom, double-click to go back to the first view
-  const target = new THREE.Vector3(0, 100, 10);
-  const HOME_VIEW = { theta: -0.12, phi: 1.02, radius: L.W * 0.95 };
+  const target = new THREE.Vector3(0, 150, -20);
+  const HOME_VIEW = { theta: -0.12, phi: 1.05, radius: L.W * 1.05 };
   const view = Object.assign({}, HOME_VIEW);
   function placeCamera() {
     const s = Math.sin(view.phi);
@@ -371,6 +456,7 @@ function createCell3D(host, L) {
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
       drawStatic();
       buildArm();
+      drawLoose(null);
       if (lastState) drawParts(lastState);
       if (lastArm) drawArm(...lastArm);
     });
@@ -379,5 +465,5 @@ function createCell3D(host, L) {
   buildArm();
   placeCamera();
   resize();
-  return { drawStatic, drawParts, drawArm, drawFlag, resize };
+  return { drawStatic, drawParts, drawArm, drawFlag, drawLoose, resize };
 }

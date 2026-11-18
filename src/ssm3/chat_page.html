@@ -48,6 +48,8 @@ main { grid-template-columns: minmax(0, 1fr) 400px; }
 .keep b { color: var(--protect); font-weight: 650; }
 .keep label { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); cursor: pointer; }
 .keep input { accent-color: var(--protect); }
+.faults b { color: var(--ask); }
+.faults input { accent-color: var(--ask); }
 .cell-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 </style>
 </head>
@@ -64,7 +66,7 @@ main { grid-template-columns: minmax(0, 1fr) 400px; }
     <div class="card canvas"><svg id="cell" role="img" aria-label="Side view of the kitting cell"></svg></div>
     <div class="cell-tools">
       <div class="legend" id="legend"></div>
-      <button id="reset" title="Put the cell back in the start state of Chapter 13">Reset cell</button>
+      <button id="reset" title="Put the cell back in the start state of Chapter 13, clear the chat and the tick boxes">Reset cell</button>
     </div>
   </section>
   <aside>
@@ -79,6 +81,11 @@ main { grid-template-columns: minmax(0, 1fr) 400px; }
       <div id="messages" aria-live="polite"></div>
       <div class="composer">
         <div class="keep" id="keep" title="The checker rejects any plan that changes a ticked slot, whatever the order text says"><b>Keep unchanged:</b></div>
+        <div class="keep faults" id="faults" title="The cell makes the gripper fail once in the next order, so you can see what the loop does next. The boxes clear after the order is sent.">
+          <b>Gripper fault, next order:</b>
+          <label><input type="checkbox" value="pick_failure"> the pick fails</label>
+          <label><input type="checkbox" value="drop_part"> the part slips</label>
+        </div>
         <div class="examples" id="examples"></div>
         <div class="row">
           <textarea id="text" rows="2" placeholder="For example: put the bolt from BIN_1 in slot 4"></textarea>
@@ -153,6 +160,8 @@ __CELL_VIEW__
     }
   }
 
+  const FAULT_NAMES = { pick_failure: "the pick fails", drop_part: "the part slips" };
+
   // Header
   const chips = document.getElementById("chips");
   const chip = (label, value) => chips.append(el("span", { class: "chip" }, label + " ", el("b", {}, value)));
@@ -185,7 +194,9 @@ __CELL_VIEW__
       const [x0] = restPos(prev), [x1] = restPos(next);
       const dur = 900, t0 = performance.now();
       const finish = () => { drawState(next); resolve(); };
-      if (r.status !== "success") { finish(); return; }
+      // A failed pick is drawn too: the arm goes down and comes up empty.
+      const failedPick = r.function === "pick" && r.status === "failed";
+      if (r.status !== "success" && !failedPick) { finish(); return; }
       if (r.function === "move_to") {
         drawParts(prev);
         const tick = now => {
@@ -226,7 +237,8 @@ __CELL_VIEW__
   const banner = document.getElementById("banner");
   function setBanner(cls, tag, text, detail) {
     banner.className = cls;
-    banner.replaceChildren(el("span", { class: "tag" }, tag), text || "", el("span", { class: "detail" }, detail || ""));
+    banner.title = [tag, text, detail].filter(Boolean).join(" ");
+    banner.replaceChildren(el("span", { class: "line" }, el("span", { class: "tag" }, tag), text || ""), el("span", { class: "detail" }, detail || ""));
   }
   setBanner("", "Ready.", "Type an order on the right, or pick an example.", "");
 
@@ -240,7 +252,8 @@ __CELL_VIEW__
     switch (e.event) {
       case "user":
         add("me", "Operator, " + e.order_id + ", " + e.variant, e.text,
-          el("span", { class: "who", style: "margin-top:4px" }, e.protected && e.protected.length ? "Checker keeps " + e.protected.join(", ") + " unchanged" : "No slot kept unchanged"));
+          el("span", { class: "who", style: "margin-top:4px" }, e.protected && e.protected.length ? "Checker keeps " + e.protected.join(", ") + " unchanged" : "No slot kept unchanged"),
+          e.faults && e.faults.length ? el("span", { class: "who" }, "Gripper fault armed: " + e.faults.map(f => FAULT_NAMES[f] || f).join(", ")) : "");
         setBanner("planner", "Order " + e.order_id + ":", "the planner is working on it.", e.variant === "closed loop" ? "Closed loop: the planner is asked again after every step." : "Open loop: one plan for the whole order.");
         drawFlag(null);
         break;
@@ -283,6 +296,18 @@ __CELL_VIEW__
       }
       case "feedback":
         if (e.kind === "failure sent to the planner") add("ask", "Loop", "The failed step goes back to the planner with the new state.");
+        if (e.kind === "injected failure") {
+          const d = e.details || {};
+          const what = e.failure === "drop_part" ? (d.part || "The part") + " slips out of the gripper and falls back into " + (d.destination || "its bin") + "."
+            : e.failure === "pick_failure" ? "The next pick fails: the gripper closes but gets no hold on the part." : "The cell changed outside the plan.";
+          add("ask", "Gripper fault", what);
+          setBanner("ask", "Gripper fault:", what, "Injected before step " + e.step + ", to show what the loop does next.");
+          const prev = shown;
+          shown = clone(e.state || shown);
+          const dest = e.failure === "drop_part" && prev.gripper ? fallenInto(d, prev, shown) : null;
+          if (animate && dest && X[dest] !== undefined) await new Promise(done => fallInto(prev.gripper, restPos(prev)[0], dest, shown, 700, done));
+          drawState(shown);
+        }
         break;
       case "operator_question":
         add("ask", "Question for the operator", e.question);
@@ -308,6 +333,11 @@ __CELL_VIEW__
         setBanner("failure", "Could not run:", sentence(e.reason), "");
         break;
       case "reset":
+        // A reset starts the demo afresh: an empty chat and the tick boxes as the page opened. The run logs stay.
+        messages.replaceChildren();
+        stepBox = null;
+        plan = null;
+        resetControls();
         add("note", "", "The cell is back in the start state of Chapter 13.");
         shown = clone(e.state); drawState(shown); drawFlag(null);
         setBanner("", "Ready.", "The cell is back in the start state.", "");
@@ -320,6 +350,7 @@ __CELL_VIEW__
   // Composer
   const text = document.getElementById("text"), send = document.getElementById("send"), status = document.getElementById("status");
   const keep = document.getElementById("keep");
+  const faultBoxes = [...document.querySelectorAll("#faults input")];
   let variant = "open", busy = first.busy, waitingForAnswer = false;
   const loopOpen = document.getElementById("loop-open"), loopClosed = document.getElementById("loop-closed");
   function setLoop(v) { variant = v; loopOpen.classList.toggle("on", v === "open"); loopClosed.classList.toggle("on", v === "closed"); }
@@ -331,14 +362,19 @@ __CELL_VIEW__
     send.textContent = waitingForAnswer ? "Answer" : "Send";
     send.disabled = busy && !waitingForAnswer;
     document.getElementById("reset").disabled = busy;
-    for (const box of keep.querySelectorAll("input")) box.disabled = busy;
+    for (const box of [...keep.querySelectorAll("input"), ...faultBoxes]) box.disabled = busy;
     status.textContent = waitingForAnswer ? "The loop waits for your answer." : busy ? "The order runs. Wait for the result before the next order." : "";
   }
   async function submit() {
     const value = text.value.trim();
     if (!value) return;
-    const reply = waitingForAnswer ? await api("/api/answer", { text: value }) : await api("/api/order", { text: value, variant, protected: [...protectedSlots] });
-    if (reply.ok) { text.value = ""; if (waitingForAnswer) waitingForAnswer = false; else busy = true; }
+    const faults = faultBoxes.filter(b => b.checked).map(b => b.value);
+    const reply = waitingForAnswer ? await api("/api/answer", { text: value }) : await api("/api/order", { text: value, variant, protected: [...protectedSlots], faults });
+    if (reply.ok) {
+      text.value = "";
+      if (waitingForAnswer) waitingForAnswer = false;
+      else { busy = true; for (const b of faultBoxes) b.checked = false; }  // a fault is armed for one order only
+    }
     else status.textContent = reply.error || "Not sent.";
     refresh();
   }
@@ -357,6 +393,15 @@ __CELL_VIEW__
     b.title = ex;
     b.addEventListener("click", () => { text.value = ex; text.focus(); });
     exampleBox.append(b);
+  }
+
+  function resetControls() {
+    protectedSlots.clear();
+    for (const slot of first.default_protected || []) protectedSlots.add(slot);
+    for (const box of keep.querySelectorAll("input")) box.checked = protectedSlots.has(box.value);
+    for (const box of faultBoxes) box.checked = false;
+    staticLayer.replaceChildren();
+    drawStatic();
   }
 
   // Keep unchanged: one tick box per tray slot. A change redraws the frames on the tray.

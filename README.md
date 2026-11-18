@@ -25,7 +25,7 @@ src/ssm3/                        the system, one module per component (Design Do
   evaluator.py                   the six measures (Chapter 10)
   demo.py                        terminal demo for Gate A (Chapter 13)
   viewer.py, viewer_page.html    replay page of a run log, in 2D or 3D
-  cell3d.js                      3D view of the cell, used by the replay and chat pages
+  cell3d.js                      3D view of the cell and the pose of the arm, used by the replay and chat pages
   vendor/three.min.js            three.js 0.147.0 (MIT licence, vendor/three.LICENSE), for the 3D view
   chat.py, chat_server.py        chat mode: typed orders on a local web page (chat_page.html)
 scripts/                         demo.py, view.py and chat.py, which run from a fresh clone
@@ -74,7 +74,13 @@ A short terminal demo runs the worked example of Chapter 13 through the real cel
 
 It pauses with "press Enter" between scenarios. `--no-pause` runs straight through and `--scenario 2` runs one scenario. The run logs go to `demo_logs/`, which git ignores.
 
-Every run also gets a replay page next to its log, with the same name and `.html`. It shows the bins, the tray with its two levels, the return position and the arm, and replays every planner answer, checker verdict and step, with Play, Back and Next. A switch on the drawing picks the 3D view or the 2D side view. In 3D you drag to turn the cell, hold Ctrl and scroll to zoom and double-click to go back to the first view. Both views get the same drawing calls, so they always show the same state. The 3D view uses three.js, which is put into the page, so the page only reads the log and needs no internet connection. Without WebGL the page keeps the 2D view. `--view` opens the page of the last run in the browser. For any older log:
+Scenarios 4 and 5 show what happens when the checker allows a step but the gripper fails, a question of Mrs Johnson at Gate A. In scenario 4 the gripper gets no hold on the long spacer, so the pick fails. In scenario 5 the spacer slips out of the gripper after the lift and falls back into its bin. Both run in the open loop and the closed loop. The open loop stops safely at the failed step (DD16). The closed loop sends the failure and the new state to the planner, which picks the part again. The failures are injected by the simulated cell (FR11), so the runs repeat exactly.
+
+```
+.venv\Scripts\python scripts\demo.py --scenario 4
+```
+
+Every run also gets a replay page next to its log, with the same name and `.html`. It shows the bins, the tray with its two levels, the return position and the arm, and replays every planner answer, checker verdict and step, with Play, Back and Next. The arm is a six-axis arm on the middle of the table with a two-finger gripper, shaped like the Doosan M0609 in the lab. The shape and sizes are approximate and not to scale, and the arm and gripper are not chosen yet. A failed pick shows the gripper coming up empty, and a part that slips out falls back into its bin. A switch on the drawing picks the 3D view or the 2D side view. In 3D you drag to turn the cell, hold Ctrl and scroll to zoom and double-click to go back to the first view. Both views get the same drawing calls, so they always show the same state. The 3D view uses three.js, which is put into the page, so the page only reads the log and needs no internet connection. Without WebGL the page keeps the 2D view. `--view` opens the page of the last run in the browser. For any older log:
 
 ```
 .venv\Scripts\python scripts\view.py demo_logs\<run>.jsonl
@@ -84,9 +90,11 @@ Without a file it opens the newest log in `demo_logs/`.
 
 ### Chat mode
 
-The chat mode opens a page where you type a kit order in plain words and watch it run: the real model plans it, the checker tests every step on a copy of the cell, and the arm moves in a 3D or 2D view of the cell. The cell keeps its state from one order to the next. A question of the planner appears in the chat, and your answer goes back to the loop. "Reset cell" puts the start state of Chapter 13 back.
+The chat mode opens a page where you type a kit order in plain words and watch it run: the real model plans it, the checker tests every step on a copy of the cell, and the arm moves in a 3D or 2D view of the cell. The cell keeps its state from one order to the next. A question of the planner appears in the chat, and your answer goes back to the loop. "Reset cell" puts the start state of Chapter 13 back, clears the chat and sets the tick boxes as they were when the page opened, so the next demo starts afresh without restarting the server. The run logs in `demo_logs/` stay.
 
 The "Keep unchanged" tick boxes choose the tray slots the checker protects for the next order (SLOT_1 and SLOT_3 when the page opens, as in Chapter 13). The checker rejects any plan that changes a ticked slot with PROTECTED_SLOT, whatever the order text says. Typing "leave slot 1 unchanged" without ticking the box is only a request to the model, not a rule the checker enforces.
+
+The "Gripper fault, next order" tick boxes make the gripper fail once in the next order, as in scenarios 4 and 5 of the demo. "The pick fails" makes the next pick come up empty. "The part slips" makes the held part fall back into its bin (the bin the capability file names for it) at the next move. With the closed loop, the real model then has to notice the failure and recover, which takes a few more model calls. The boxes clear when the order is sent.
 
 ```
 .venv\Scripts\python scripts\chat.py
