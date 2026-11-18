@@ -23,7 +23,7 @@ default, which git ignores). With --live: --variant open runs the open loop (one
 model call), --model changes the model and --delay sets the seconds between model
 calls (2.5 by default, as in the model tests).
 
-Every run also gets a 2D replay page next to its log (viewer.py), and --view
+Every run also gets a replay page in 2D and 3D next to its log (viewer.py), and --view
 opens the page of the last run in the browser.
 """
 
@@ -433,7 +433,7 @@ def main(argv=None, out=print, read=input, sleep=time.sleep, show=webbrowser.ope
     parser.add_argument("--local", action="store_true",
                         help="with --live, use a local model through Ollama instead of Groq (no key needed)")
     parser.add_argument("--delay", type=float, help="seconds between model calls with --live (2.5 on Groq, 0 local)")
-    parser.add_argument("--view", action="store_true", help="open the 2D replay of the last run in the browser")
+    parser.add_argument("--view", action="store_true", help="open the 3D and 2D replay of the last run")
     args = parser.parse_args(argv)
 
     def pause():
@@ -470,7 +470,7 @@ def main(argv=None, out=print, read=input, sleep=time.sleep, show=webbrowser.ope
     out(f"Run logs (one JSON record per event) are in: {Path(args.log_dir).resolve()}")
     out(f"Last log: {last_log.path}")
     pages = [viewer.write_html(log.path) for _, log in results]
-    out(f"2D replay of the last run (open it in a browser): {pages[-1]}")
+    out(f"Replay of the last run in 3D and 2D (open it in a browser): {pages[-1]}")
     out("One record from it:")
     out(json.dumps(interesting_record(last_log.records), indent=2))
     if args.view:

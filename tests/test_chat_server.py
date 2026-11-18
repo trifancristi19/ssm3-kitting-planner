@@ -128,3 +128,12 @@ def test_the_events_say_which_provider_plans(tmp_path):
     assert (data["provider"], data["local"]) == ("Ollama on this computer", True)
     _, data = call(chat.ChatSession(log_dir=tmp_path), "GET", "/api/events")
     assert (data["provider"], data["local"]) == ("Groq", False)
+
+
+def test_the_chat_page_holds_the_3d_view(tmp_path):
+    status, text = call(session(tmp_path), "GET", "/")
+    assert status == 200
+    assert text.count("Copyright 2010-2022 Three.js Authors") == 1
+    assert text.count("function createCell3D(") == 1
+    assert "__THREE_JS__" not in text and "__CELL3D_JS__" not in text
+    assert "view3d.drawStatic()" in text

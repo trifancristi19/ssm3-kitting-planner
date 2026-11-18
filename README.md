@@ -24,7 +24,9 @@ src/ssm3/                        the system, one module per component (Design Do
   logger.py                      run logger (Chapter 10)
   evaluator.py                   the six measures (Chapter 10)
   demo.py                        terminal demo for Gate A (Chapter 13)
-  viewer.py, viewer_page.html    2D replay page of a run log
+  viewer.py, viewer_page.html    replay page of a run log, in 2D or 3D
+  cell3d.js                      3D view of the cell, used by the replay and chat pages
+  vendor/three.min.js            three.js 0.147.0 (MIT licence, vendor/three.LICENSE), for the 3D view
   chat.py, chat_server.py        chat mode: typed orders on a local web page (chat_page.html)
 scripts/                         demo.py, view.py and chat.py, which run from a fresh clone
 study1/tasks.py                  Study 1 task set and checker, unchanged apart from the Excel logging
@@ -72,7 +74,7 @@ A short terminal demo runs the worked example of Chapter 13 through the real cel
 
 It pauses with "press Enter" between scenarios. `--no-pause` runs straight through and `--scenario 2` runs one scenario. The run logs go to `demo_logs/`, which git ignores.
 
-Every run also gets a 2D replay page next to its log, with the same name and `.html`. It shows the bins, the tray with its two levels, the return position and the arm, and replays every planner answer, checker verdict and step, with Play, Back and Next. The page only reads the log and needs no internet connection. `--view` opens the page of the last run in the browser. For any older log:
+Every run also gets a replay page next to its log, with the same name and `.html`. It shows the bins, the tray with its two levels, the return position and the arm, and replays every planner answer, checker verdict and step, with Play, Back and Next. A switch on the drawing picks the 3D view or the 2D side view. In 3D you drag to turn the cell, hold Ctrl and scroll to zoom and double-click to go back to the first view. Both views get the same drawing calls, so they always show the same state. The 3D view uses three.js, which is put into the page, so the page only reads the log and needs no internet connection. Without WebGL the page keeps the 2D view. `--view` opens the page of the last run in the browser. For any older log:
 
 ```
 .venv\Scripts\python scripts\view.py demo_logs\<run>.jsonl
@@ -82,7 +84,7 @@ Without a file it opens the newest log in `demo_logs/`.
 
 ### Chat mode
 
-The chat mode opens a page where you type a kit order in plain words and watch it run: the real model plans it, the checker tests every step on a copy of the cell, and the arm moves in a 2D view of the cell. The cell keeps its state from one order to the next. A question of the planner appears in the chat, and your answer goes back to the loop. "Reset cell" puts the start state of Chapter 13 back.
+The chat mode opens a page where you type a kit order in plain words and watch it run: the real model plans it, the checker tests every step on a copy of the cell, and the arm moves in a 3D or 2D view of the cell. The cell keeps its state from one order to the next. A question of the planner appears in the chat, and your answer goes back to the loop. "Reset cell" puts the start state of Chapter 13 back.
 
 The "Keep unchanged" tick boxes choose the tray slots the checker protects for the next order (SLOT_1 and SLOT_3 when the page opens, as in Chapter 13). The checker rejects any plan that changes a ticked slot with PROTECTED_SLOT, whatever the order text says. Typing "leave slot 1 unchanged" without ticking the box is only a request to the model, not a rule the checker enforces.
 
@@ -122,4 +124,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before your first change.
 
 ## Licence
 
-The code is released under the MIT licence, see [LICENSE](LICENSE).
+The code is released under the MIT licence, see [LICENSE](LICENSE). The 3D view uses three.js, which has its own MIT licence in [src/ssm3/vendor/three.LICENSE](src/ssm3/vendor/three.LICENSE).

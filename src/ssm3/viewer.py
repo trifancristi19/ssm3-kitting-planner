@@ -1,4 +1,4 @@
-"""Visual replay of a run log as a 2D view of the cell (proposal).
+"""Visual replay of a run log in a 2D or 3D view of the cell (proposal).
 
 The Design Document plans a 3D view in RoboDK as a Could item (FR14, Chapter 12)
 that reads the cell state. This module is a smaller step in the same direction:
@@ -7,6 +7,10 @@ in a browser. The page shows the bins, the tray with its two levels, the return
 position and the arm, and next to them every planner answer, every verdict of
 the checker and every step. It reads only the log file, so it cannot move or
 change anything, and the page needs no internet connection and no extra package.
+
+A switch on the page picks the 2D side view or the 3D view, which Mrs Johnson
+asked for at Gate A. The 3D view (cell3d.js) draws with three.js, which is kept
+in vendor/ with its MIT licence and put into the page, so it still works offline.
 
 Run it on a log with:
 
@@ -20,6 +24,7 @@ import argparse
 import copy
 import html
 import json
+import re
 import webbrowser
 from pathlib import Path
 
@@ -29,6 +34,24 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LOG_DIR = ROOT / "demo_logs"
 # The page itself (HTML, CSS and JavaScript) is a separate file next to this one.
 PAGE_FILE = Path(__file__).with_name("viewer_page.html")
+CELL3D_FILE = Path(__file__).with_name("cell3d.js")
+THREE_FILE = Path(__file__).parent / "vendor" / "three.min.js"
+
+
+def scripts_3d():
+    """The three.js library and the 3D view, keyed by the placeholders the pages use for them."""
+    return {"__THREE_JS__": THREE_FILE.read_text(encoding="utf-8"),
+            "__CELL3D_JS__": CELL3D_FILE.read_text(encoding="utf-8")}
+
+
+def fill(page, values):
+    """Put every value in place of its placeholder in one pass.
+
+    One pass means a value never becomes a placeholder itself: a log text or the
+    library may contain "__DATA__", and it stays as it is.
+    """
+    pattern = re.compile("|".join(re.escape(key) for key in values))
+    return pattern.sub(lambda match: values[match.group(0)], page)
 
 
 def _stack(state, position):
@@ -92,7 +115,7 @@ def build_html(records):
     # Every "<" is written as <, so no text in the log can end the script element early.
     data = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
     page = PAGE_FILE.read_text(encoding="utf-8")
-    return page.replace("__TITLE__", html.escape(title)).replace("__DATA__", data)
+    return fill(page, {"__TITLE__": html.escape(title), "__DATA__": data, **scripts_3d()})
 
 
 def write_html(log_path, html_path=None):
@@ -111,7 +134,7 @@ def newest_log(folder=DEFAULT_LOG_DIR):
 
 
 def main(argv=None, out=print, show=webbrowser.open):
-    parser = argparse.ArgumentParser(description="Write and open a 2D replay of a run log")
+    parser = argparse.ArgumentParser(description="Write and open a 2D and 3D replay of a run log")
     parser.add_argument("log", nargs="?", help="a .jsonl run log, by default the newest one in demo_logs")
     parser.add_argument("--no-open", action="store_true", help="write the page without opening a browser")
     args = parser.parse_args(argv)

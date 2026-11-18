@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ssm3 import planner as planner_module
+from ssm3 import viewer
 
 HOST = "127.0.0.1"
 PORT = 8765
@@ -36,12 +37,13 @@ VIEWER_PAGE = Path(__file__).with_name("viewer_page.html")
 
 
 def page():
-    """The chat page, with the styles and the drawing of the cell taken from the replay page (viewer_page.html)."""
-    viewer = VIEWER_PAGE.read_text(encoding="utf-8")
-    style = viewer.split("<style>", 1)[1].split("</style>", 1)[0]
-    view = viewer.split("  // CELL VIEW START", 1)[1].split("  // CELL VIEW END", 1)[0]
+    """The chat page, with the styles and the 2D and 3D drawing of the cell taken from the replay page."""
+    replay = VIEWER_PAGE.read_text(encoding="utf-8")
+    style = replay.split("<style>", 1)[1].split("</style>", 1)[0]
+    view = replay.split("  // CELL VIEW START", 1)[1].split("  // CELL VIEW END", 1)[0]
     chat = PAGE_FILE.read_text(encoding="utf-8")
-    return chat.replace("__CELL_STYLE__", style).replace("__CELL_VIEW__", "  // CELL VIEW START" + view)
+    return viewer.fill(chat, {"__CELL_STYLE__": style, "__CELL_VIEW__": "  // CELL VIEW START" + view,
+                              **viewer.scripts_3d()})
 
 
 def handle(session, method, path, body=b"", content_type="", host="127.0.0.1"):

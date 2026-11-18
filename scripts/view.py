@@ -1,4 +1,4 @@
-"""Write and open the 2D replay of a run log: python scripts/view.py [demo_logs/<run>.jsonl]
+"""Write and open the 2D and 3D replay of a run log: python scripts/view.py [demo_logs/<run>.jsonl]
 
 The viewer itself is in src/ssm3/viewer.py. This file only puts src on the path, so the
 viewer runs from a fresh clone without installing the package.

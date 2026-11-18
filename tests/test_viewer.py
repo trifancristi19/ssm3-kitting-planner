@@ -1,4 +1,4 @@
-"""Tests for the 2D replay page of a run log (viewer.py). They only write and read files."""
+"""Tests for the 2D and 3D replay page of a run log (viewer.py). They only write and read files."""
 
 import json
 import re
@@ -78,3 +78,41 @@ def test_the_script_writes_a_page_for_the_newest_log(tmp_path, monkeypatch):
     opened = []
     page = viewer.main([str(viewer.newest_log(tmp_path))], out=lambda line: None, show=opened.append)
     assert page.exists() and opened == [page.resolve().as_uri()]
+
+
+# The 3D view: three.js and cell3d.js are put into the page, so it works offline
+
+THREE_HEADER = "Copyright 2010-2022 Three.js Authors"
+
+
+def test_the_page_holds_three_js_and_the_3d_view_once(tmp_path):
+    [(_, log)] = demo.main(["--no-pause", "--scenario", "1", "--log-dir", str(tmp_path)], out=lambda line: None,
+                           read=never_read)
+    page = log.path.with_suffix(".html").read_text(encoding="utf-8")
+    assert page.count(THREE_HEADER) == 1
+    assert page.count("function createCell3D(") == 1
+    assert not re.search(r"__(TITLE|DATA|THREE_JS|CELL3D_JS)__", page)
+    # The 2D drawing hands every call to the 3D view as well
+    for call in ("view3d.drawStatic()", "view3d.drawParts(state)", "view3d.drawArm(ax, ay, holding)",
+                 "view3d.drawFlag(pos, kind)"):
+        assert call in page
+
+
+def test_the_vendored_library_keeps_its_licence_and_cannot_end_a_script_element():
+    library = viewer.THREE_FILE.read_text(encoding="utf-8")
+    assert library.startswith("/**\n * @license\n * " + THREE_HEADER)
+    licence = viewer.THREE_FILE.with_name("three.LICENSE").read_text(encoding="utf-8")
+    assert licence.startswith("The MIT License")
+    for text in (viewer.CELL3D_FILE.read_text(encoding="utf-8"), library):
+        assert not re.search(r"</script|<script|<!--", text, re.I)
+
+
+def test_placeholders_are_filled_in_one_pass():
+    assert viewer.fill("__A__ __B__", {"__A__": "__B__", "__B__": "b"}) == "__B__ b"
+
+
+def test_a_placeholder_typed_in_an_order_stays_text(tmp_path):
+    records = [{"event": "run_start", "order_id": "X", "instruction": "__THREE_JS__ __DATA__", "initial_state": None}]
+    page = viewer.build_html(records)
+    assert page.count(THREE_HEADER) == 1
+    assert page_data(page)["records"][0]["instruction"] == "__THREE_JS__ __DATA__"
