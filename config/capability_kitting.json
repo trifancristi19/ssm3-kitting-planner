@@ -1,0 +1,17 @@
+{
+  "positions": {
+    "home": "HOME",
+    "bins": ["BIN_1", "BIN_2", "BIN_3", "BIN_4", "BIN_5", "BIN_6"],
+    "slots": ["SLOT_1", "SLOT_2", "SLOT_3", "SLOT_4"],
+    "return": "RETURN"
+  },
+  "parts": {
+    "BRICK_2X2_RED": "BIN_1",
+    "BRICK_2X4_RED": "BIN_2",
+    "BRICK_2X2_BLUE": "BIN_3",
+    "BRICK_2X4_BLUE": "BIN_4",
+    "BRICK_2X2_YELLOW": "BIN_5",
+    "BRICK_2X4_YELLOW": "BIN_6"
+  },
+  "limits": {"levels_per_slot": 2, "parts_in_gripper": 1, "return_capacity": 8, "max_steps": 40}
+}
