@@ -169,3 +169,20 @@ def test_unknown_protected_slots_are_refused(tmp_path):
     assert not session.submit("Move the bolt", protected="SLOT_1")
     assert not session.submit("Move the bolt", protected=["BIN_1"])
     assert session.events_since() == []
+
+
+def test_a_local_model_runs_without_a_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setattr(planner, "ENV_FILE", tmp_path / "no.env")
+    seen = []
+
+    def fake_model(prompt, settings=None):
+        seen.append(settings)
+        return json.dumps({"plan": []})
+
+    monkeypatch.setattr(planner, "call_model", fake_model)
+    session = chat.ChatSession(settings=planner.settings_for(local=True), log_dir=tmp_path, delay=0)
+    summary = session.run("Nothing to do")
+    assert summary is not None and seen[0]["provider"] == "ollama"
+    start = next(event for event in session.events_since() if event["event"] == "run_start")
+    assert (start["provider"], start["model"]) == ("ollama", "qwen3:8b")

@@ -3,14 +3,15 @@
 The Design Document does not describe a chat mode, so all of it is a proposal.
 
 The operator types a kit order in plain words. The order goes through the same
-code as every other run: the planner (the real model on Groq), the checker, the
+code as every other run: the planner (the real model on Groq, or a local model
+through Ollama with --local), the checker, the
 orchestrator loop, the simulated cell and the run log. The cell keeps its state
 from one order to the next, so a second order starts where the first one ended.
 A question of the planner or the checker comes back to the chat, and the answer
 the operator types goes back to the loop.
 
 This module holds the session. chat_server.py puts a local web page in front of
-it. Every order with the real model uses the Groq free-tier limit. The tests give
+it. Every order with the model on Groq uses the Groq free-tier limit. The tests give
 the session a fake planner, so no test calls a model.
 """
 
@@ -72,7 +73,7 @@ class ChatSession:
                  answer_seconds=ANSWER_SECONDS):
         self.capability = demo_capability()
         self.cell = SimulatedCell(self.capability, chapter_13_state(self.capability))
-        self.settings = dict(settings or {})
+        self.settings = {**planner_module.DEFAULT_SETTINGS, **(settings or {})}
         self.uses_model = planner is None
         self._planner = planner
         self.delay = delay
@@ -88,7 +89,15 @@ class ChatSession:
 
     @property
     def model(self):
-        return self.settings.get("model", planner_module.DEFAULT_SETTINGS["model"])
+        return self.settings["model"]
+
+    @property
+    def provider(self):
+        return planner_module.provider_name(self.settings)
+
+    @property
+    def local(self):
+        return not self.settings["needs_key"]
 
     def add(self, event):
         with self._lock:
@@ -146,7 +155,7 @@ class ChatSession:
                   "protected": protected})
         if self.uses_model:
             try:
-                planner_module.api_key()
+                planner_module.check_access(self.settings)
             except planner_module.ModelAccessError as error:
                 self.add({"event": "error", "reason": str(error)})
                 return None
@@ -154,7 +163,8 @@ class ChatSession:
         log = ChatLog(f"chat-{order['order_id']}-{stamp}", self.log_dir, self)
         info = {"planner": "llm" if self.uses_model else "test planner", "initial_state": self.cell.state()}
         if self.uses_model:
-            info.update(model=self.model, provider="groq", prompt_version=planner_module.PROMPT_VERSION)
+            info.update(model=self.model, provider=self.settings["provider"],
+                        prompt_version=planner_module.PROMPT_VERSION)
         try:
             return run_order(order, VARIANTS[variant], planner=self._make_planner(), cell=self.cell,
                              operator=ChatOperator(self), log=log, protected=protected, info=info)

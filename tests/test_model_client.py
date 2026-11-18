@@ -196,3 +196,56 @@ def test_a_groq_rate_limit_is_repeated_by_the_orchestrator(key, cell, monkeypatc
     result = orchestrator.run_with_provider_repeats(run)
     assert (result["status"], result["attempts"]) == ("done", 2)
     assert result["result"]["outcome"] == "done"
+
+
+# A local model through Ollama (demo and chat mode only, proposal)
+
+def test_the_local_settings_reach_ollama_on_this_computer_without_a_key(no_key):
+    seen = []
+    settings = planner.settings_for(local=True)
+    assert call_model("the prompt", settings, opener=answering('{"plan": []}', seen)) == '{"plan": []}'
+    [(request, timeout)] = seen
+    assert request.full_url == "http://localhost:11434/v1/chat/completions"
+    assert request.get_header("Authorization") is None
+    payload = json.loads(request.data)
+    assert payload["model"] == "qwen3:8b" and payload["temperature"] == 0
+    assert payload["response_format"] == {"type": "json_object"}
+    assert timeout == planner.LOCAL_SETTINGS["timeout_seconds"]
+
+
+def test_the_local_settings_never_send_a_groq_key(key):
+    seen = []
+    call_model("p", planner.settings_for(local=True), opener=answering("{}", seen))
+    [(request, _)] = seen
+    assert request.get_header("Authorization") is None
+    assert SENTINEL not in json.dumps(dict(request.header_items())) + request.data.decode()
+
+
+def test_settings_for_picks_the_provider_and_the_model():
+    assert planner.settings_for() == DEFAULT_SETTINGS
+    assert planner.settings_for(local=True)["model"] == "qwen3:8b"
+    local = planner.settings_for(local=True, model="gpt-oss:20b")
+    assert (local["provider"], local["model"], local["needs_key"]) == ("ollama", "gpt-oss:20b", False)
+    assert local["temperature"] == 0 and local["json_mode"] is True
+    assert planner.provider_name(local) == "Ollama on this computer"
+    assert planner.provider_name() == "Groq"
+
+
+def test_check_access_needs_a_key_only_for_groq(no_key):
+    planner.check_access(planner.settings_for(local=True))
+    with pytest.raises(ModelAccessError, match="GROQ_API_KEY is not set"):
+        planner.check_access()
+
+
+def test_ollama_not_running_says_how_to_start_it(no_key):
+    def offline(request, timeout):
+        raise urllib.error.URLError(ConnectionRefusedError("refused"))
+
+    with pytest.raises(ProviderLimit, match="ollama pull qwen3:8b"):
+        call_model("p", planner.settings_for(local=True), opener=offline)
+
+
+def test_a_model_that_is_not_pulled_says_how_to_pull_it(no_key):
+    with pytest.raises(ModelAccessError, match="ollama pull gpt-oss:20b"):
+        call_model("p", planner.settings_for(local=True, model="gpt-oss:20b"),
+                   opener=failing(404, '{"error": "model not found"}'))

@@ -139,3 +139,21 @@ def test_the_fallback_can_be_declined(tmp_path, monkeypatch):
     results = demo.main(["--live", "--log-dir", str(tmp_path)], out=lambda line: None,
                         read=lambda prompt: answers.pop(0), sleep=lambda seconds: None)
     assert results == []
+
+
+def test_live_local_needs_no_key_and_logs_the_local_model(tmp_path, monkeypatch, chapter6_plan):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setattr(planner, "ENV_FILE", tmp_path / "no.env")
+    seen = []
+
+    def fake_model(prompt, settings=None):
+        seen.append(settings)
+        return json.dumps({"plan": chapter6_plan})
+
+    monkeypatch.setattr(planner, "call_model", fake_model)
+    [(summary, log)], screen = live(tmp_path, "--local", "--variant", "open")
+    assert summary["outcome"] == "done"
+    assert "qwen3:8b on Ollama on this computer" in screen and "needs no API key" in screen
+    assert seen[0]["provider"] == "ollama"
+    start = log.of_kind("run_start")[0]
+    assert (start["model"], start["provider"]) == ("qwen3:8b", "ollama")

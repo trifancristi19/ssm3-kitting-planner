@@ -25,6 +25,12 @@ raises ProviderLimit, a call that takes longer than its time limit raises
 ModelTimeout, and a refused key or a bad request raises ModelAccessError, because
 repeating those cannot help. The tests never reach Groq: they replace the HTTP
 call, and the network is blocked in every test.
+
+LOCAL_SETTINGS run the same prompt on a local model through Ollama, which offers
+the same OpenAI-compatible endpoint on this computer and needs no key. This is for
+the demo and the chat mode only, so people without a Groq key can try them. It is
+a proposal of the client at Gate A and not part of the experiment, which keeps the
+model of DD17.
 """
 
 import json
@@ -47,7 +53,21 @@ DEFAULT_SETTINGS = {
     "temperature": 0,
     "json_mode": True,
     "timeout_seconds": 60,
+    "needs_key": True,
 }
+
+# A local model through Ollama for the demo and the chat mode (proposal, not used in the experiment). qwen3:8b
+# is small enough for an ordinary laptop (5.2 GB) and planned the Chapter 13 order correctly in a first local try on
+# 18 November 2026. A local model on a laptop can be much slower than Groq (that try took minutes for one call), so
+# the time limit is longer than the 60 seconds of DD14. --model picks another pulled model, such as gpt-oss:20b.
+LOCAL_SETTINGS = {
+    "provider": "ollama",
+    "base_url": "http://localhost:11434/v1",
+    "model": "qwen3:8b",
+    "timeout_seconds": 300,
+    "needs_key": False,
+}
+PROVIDER_NAMES = {"groq": "Groq", "ollama": "Ollama on this computer"}
 KEY_VARIABLE = "GROQ_API_KEY"
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
@@ -213,6 +233,32 @@ def api_key(env_file=None):
     raise ModelAccessError(f"{KEY_VARIABLE} is not set. Set it with setx or in a local .env file, never in the code.")
 
 
+def settings_for(local=False, model=None):
+    """The full model settings: Groq by default, the local Ollama model when local is true, and another model ID."""
+    settings = {**DEFAULT_SETTINGS, **(LOCAL_SETTINGS if local else {})}
+    if model:
+        settings["model"] = model
+    return settings
+
+
+def provider_name(settings=None):
+    """The provider of these settings, written for people: "Groq" or "Ollama on this computer"."""
+    provider = {**DEFAULT_SETTINGS, **(settings or {})}["provider"]
+    return PROVIDER_NAMES.get(provider, provider)
+
+
+def check_access(settings=None):
+    """Raise ModelAccessError when these settings need a key and none is set. A local model needs none."""
+    if {**DEFAULT_SETTINGS, **(settings or {})}["needs_key"]:
+        api_key()
+
+
+def _ollama_hint(settings):
+    if settings["provider"] != "ollama":
+        return ""
+    return f" Is Ollama running, and is the model pulled? Run: ollama pull {settings['model']}"
+
+
 def _retry_after(error):
     header = error.headers.get("retry-after") if error.headers else None
     try:
@@ -230,7 +276,7 @@ def call_model(prompt, settings=None, opener=None):
     bad request raises ModelAccessError (DD14).
     """
     settings = {**DEFAULT_SETTINGS, **(settings or {})}
-    key = api_key()
+    key = api_key() if settings["needs_key"] else None
     payload = {
         "model": settings["model"],
         "messages": [{"role": "user", "content": prompt}],
@@ -241,8 +287,8 @@ def call_model(prompt, settings=None, opener=None):
     request = urllib.request.Request(
         settings["base_url"] + "/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "User-Agent": "ssm3-kitting-planner"},
+        headers={"Content-Type": "application/json", "User-Agent": "ssm3-kitting-planner",
+                 **({"Authorization": f"Bearer {key}"} if key else {})},
     )
     open_url = opener or urllib.request.urlopen
     provider = settings["provider"]
@@ -250,16 +296,19 @@ def call_model(prompt, settings=None, opener=None):
         with open_url(request, timeout=settings["timeout_seconds"]) as response:
             answer = json.loads(response.read())
     except urllib.error.HTTPError as error:
-        body = error.read().decode("utf-8", "replace")[:300].replace(key, "[removed]")
+        body = error.read().decode("utf-8", "replace")[:300]
+        if key:
+            body = body.replace(key, "[removed]")
         if error.code in PROVIDER_LIMIT_STATUSES:
             raise ProviderLimit(f"{provider} returned {error.code}: {body}", retry_after=_retry_after(error)) from None
-        raise ModelAccessError(f"{provider} refused the request with {error.code}: {body}") from None
+        hint = _ollama_hint(settings) if error.code == 404 else ""
+        raise ModelAccessError(f"{provider} refused the request with {error.code}: {body}{hint}") from None
     except TimeoutError:
         raise ModelTimeout(f"no answer within {settings['timeout_seconds']} seconds") from None
     except urllib.error.URLError as error:
         if isinstance(error.reason, TimeoutError):
             raise ModelTimeout(f"no answer within {settings['timeout_seconds']} seconds") from None
-        raise ProviderLimit(f"could not reach {provider}: {error.reason}") from None
+        raise ProviderLimit(f"could not reach {provider}: {error.reason}.{_ollama_hint(settings)}") from None
     try:
         return answer["choices"][0]["message"].get("content") or ""
     except (KeyError, IndexError, TypeError, AttributeError):

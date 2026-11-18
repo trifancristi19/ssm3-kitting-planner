@@ -106,3 +106,25 @@ def test_bad_protected_lists_are_refused(tmp_path):
     assert call(s, "POST", "/api/order", {"text": "x", "protected": "SLOT_1"})[0] == 400
     assert call(s, "POST", "/api/order", {"text": "x", "protected": ["SLOT_9"]})[0] == 400
     assert s.events_since() == []
+
+
+def test_main_with_local_uses_ollama_and_no_delay(monkeypatch):
+    seen = {}
+
+    def fake_serve(session, port, out, open_page):
+        seen.update(provider=session.settings["provider"], model=session.model, delay=session.delay,
+                    local=session.local)
+
+    chat_server.main(["--local", "--no-open"], out=lambda line: None, run=fake_serve)
+    assert seen == {"provider": "ollama", "model": "qwen3:8b", "delay": 0, "local": True}
+    chat_server.main(["--local", "--model", "gpt-oss:20b", "--delay", "1", "--no-open"], out=lambda line: None,
+                     run=fake_serve)
+    assert (seen["model"], seen["delay"]) == ("gpt-oss:20b", 1.0)
+
+
+def test_the_events_say_which_provider_plans(tmp_path):
+    s = chat.ChatSession(settings={"provider": "ollama", "needs_key": False}, log_dir=tmp_path)
+    _, data = call(s, "GET", "/api/events")
+    assert (data["provider"], data["local"]) == ("Ollama on this computer", True)
+    _, data = call(chat.ChatSession(log_dir=tmp_path), "GET", "/api/events")
+    assert (data["provider"], data["local"]) == ("Groq", False)

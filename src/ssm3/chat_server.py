@@ -12,7 +12,8 @@ The routes:
     POST /api/answer          {"text": ...} answers the question the loop is waiting on
     POST /api/reset           puts the cell back in the Chapter 13 start state
 
-Start it with scripts/chat.py. Every order uses the Groq free-tier limit.
+Start it with scripts/chat.py. Every order uses the Groq free-tier limit, unless
+--local runs a local model through Ollama instead (proposal, demo only).
 """
 
 import json
@@ -57,6 +58,7 @@ def handle(session, method, path, body=b"", content_type="", host="127.0.0.1"):
             since = 0
         return _json(200, {"events": session.events_since(since), "busy": session.busy, "state": session.state(),
                            "uses_model": session.uses_model, "model": session.model,
+                           "provider": session.provider, "local": session.local,
                            "default_protected": list(DEFAULT_PROTECTED)})
     if method == "POST" and url.path in ("/api/order", "/api/answer", "/api/reset"):
         # Only JSON is accepted. A browser sends JSON to another site only after asking
@@ -126,9 +128,10 @@ def serve(session, port=PORT, out=print, open_page=None):
     url = f"http://{HOST}:{server.server_address[1]}/"
     out(f"Chat mode: open {url} in a browser. Stop with Ctrl+C.")
     if session.uses_model:
-        out(f"Planner: {session.model} on Groq. Every order uses the Groq free-tier limit.")
+        out(f"Planner: {session.model} on {session.provider}. "
+            + ("It needs no API key." if session.local else "Every order uses the Groq free-tier limit."))
         try:
-            planner_module.api_key()
+            planner_module.check_access(session.settings)
         except planner_module.ModelAccessError as error:
             out(f"Warning: {error}")
     if open_page:
@@ -150,10 +153,13 @@ def main(argv=None, out=print, show=None, run=serve):
 
     parser = argparse.ArgumentParser(description="Chat mode: type kit orders for the simulated cell in a browser")
     parser.add_argument("--port", type=int, default=PORT, help=f"port on 127.0.0.1 ({PORT} by default)")
-    parser.add_argument("--model", help="model ID, by default the one in planner.DEFAULT_SETTINGS")
-    parser.add_argument("--delay", type=float, default=2.5, help="seconds between model calls in one order")
+    parser.add_argument("--local", action="store_true", help="use a local model through Ollama instead of Groq")
+    parser.add_argument("--model", help="model ID, by default the one in planner.DEFAULT_SETTINGS "
+                        "(or LOCAL_SETTINGS with --local)")
+    parser.add_argument("--delay", type=float, help="seconds between model calls in one order (2.5 on Groq, 0 local)")
     parser.add_argument("--no-open", action="store_true", help="do not open the browser")
     args = parser.parse_args(argv)
-    session = ChatSession(settings={"model": args.model} if args.model else None, delay=args.delay)
+    delay = args.delay if args.delay is not None else (0 if args.local else 2.5)
+    session = ChatSession(settings=planner_module.settings_for(args.local, args.model), delay=delay)
     opener = None if args.no_open else (show or webbrowser.open)
     return run(session, port=args.port, out=out, open_page=opener)

@@ -100,6 +100,18 @@ The cell cannot place a part into a bin, so an order like "put it back in the bi
 .venv\Scripts\python scripts\demo.py --live
 ```
 
+### Local model with Ollama
+
+Without a Groq key, the live demo and the chat mode can use a local model instead, through [Ollama](https://ollama.com). It runs on your own computer, needs no API key and uses no free-tier limit. Install Ollama, pull the model once and add `--local`:
+
+```
+ollama pull qwen3:8b
+.venv\Scripts\python scripts\chat.py --local
+.venv\Scripts\python scripts\demo.py --live --local
+```
+
+The default local model is `qwen3:8b` (5.2 GB). `--model` picks any other model you have pulled, for example `--local --model gpt-oss:20b`. A local model on a laptop is much slower than Groq, often minutes for one call, and a small model makes more mistakes. The checker still tests every plan before anything moves. The local model is only for the demo and the chat mode. The experiment keeps the model of the Design Document (DD17).
+
 ## API keys
 
 The model client reads the key only from the environment variable `GROQ_API_KEY`, or from a local `.env` file with a line `GROQ_API_KEY=...`. Both `.env` and `demo_logs/` are ignored by git, and the run log removes the key from every record. To set the key on Windows, run `setx GROQ_API_KEY "your key"` once and open a new terminal. Never put a key in any other file in this repository, and check `git status` before every commit anyway.
@@ -107,3 +119,7 @@ The model client reads the key only from the environment variable `GROQ_API_KEY`
 ## Working together
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before your first change.
+
+## Licence
+
+The code is released under the MIT licence, see [LICENSE](LICENSE).

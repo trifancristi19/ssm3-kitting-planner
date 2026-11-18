@@ -9,7 +9,8 @@ model uses.
 --live runs the same order once with the real model on Groq instead (DD17), in the
 closed loop. It uses the Groq free-tier limit, needs GROQ_API_KEY and is never run
 by the tests. If the key is missing or a call fails, the demo says why and offers
-the scripted version of the same order.
+the scripted version of the same order. --live --local uses a local model through
+Ollama instead of Groq (proposal, demo only), which needs no key and no free-tier limit.
 
 Run it from the repository folder on Windows with:
 
@@ -372,12 +373,12 @@ def paced(planner, delay, out, sleep):
 
 
 def live_demo(args, out, read, sleep):
-    settings = {"model": args.model} if args.model else {}
-    model = settings.get("model", planner_module.DEFAULT_SETTINGS["model"])
+    settings = planner_module.settings_for(args.local, args.model)
+    model = settings["model"]
     variant = "open loop" if args.variant == "open" else "closed loop"
-    out(f"Live mode: the order of Chapter 13 with {model} on Groq, {variant}.")
+    out(f"Live mode: the order of Chapter 13 with {model} on {planner_module.provider_name(settings)}, {variant}.")
     out("Planner: real language model. Cell, checker, loop and run log: real code.")
-    out("This uses the Groq free-tier limit.")
+    out("This runs on this computer and needs no API key." if args.local else "This uses the Groq free-tier limit.")
     out(textwrap.fill(f"Order: {ORDER['text']}", WIDTH, subsequent_indent="       "))
     capability = demo_capability()
     state = chapter_13_state(capability)
@@ -397,7 +398,7 @@ def live_demo(args, out, read, sleep):
         return [(summary, log)]
 
     try:
-        planner_module.api_key()
+        planner_module.check_access(settings)
     except planner_module.ModelAccessError as error:
         return fall_back(str(error))
     out(tray_view(state, "Tray before:"))
@@ -406,11 +407,11 @@ def live_demo(args, out, read, sleep):
     log = LiveLog(f"demo-live-{variant.replace(' ', '-')}-{stamp}", args.log_dir, out)
     operator = ScriptedOperator() if args.no_pause else TerminalOperator(read=read, write=out)
     info = {"planner": "llm", "initial_state": copy.deepcopy(state),
-            "model": model, "provider": "groq", "prompt_version": planner_module.PROMPT_VERSION,
-            "settings": {key: value for key, value in {**planner_module.DEFAULT_SETTINGS, **settings}.items()
-                         if key != "base_url"}}
+            "model": model, "provider": settings["provider"], "prompt_version": planner_module.PROMPT_VERSION,
+            "settings": {key: value for key, value in settings.items() if key != "base_url"}}
+    delay = args.delay if args.delay is not None else (0 if args.local else 2.5)
     try:
-        summary = run_order(ORDER, variant, planner=paced(planner_module.llm_planner(settings), args.delay, out, sleep),
+        summary = run_order(ORDER, variant, planner=paced(planner_module.llm_planner(settings), delay, out, sleep),
                             cell=SimulatedCell(capability, state), operator=operator, log=log, protected=PROTECTED,
                             expected_plan=plan_from_state(state)["plan"], info=info)
     except planner_module.ModelError as error:
@@ -427,8 +428,11 @@ def main(argv=None, out=print, read=input, sleep=time.sleep, show=webbrowser.ope
     parser.add_argument("--log-dir", default=str(ROOT / "demo_logs"), help="folder for the run logs")
     parser.add_argument("--live", action="store_true", help="run the order once with the real model on Groq")
     parser.add_argument("--variant", choices=("closed", "open"), default="closed", help="loop for --live")
-    parser.add_argument("--model", help="model ID for --live, by default the one in planner.DEFAULT_SETTINGS")
-    parser.add_argument("--delay", type=float, default=2.5, help="seconds between model calls with --live")
+    parser.add_argument("--model", help="model ID for --live, by default the one in planner.DEFAULT_SETTINGS "
+                        "(or LOCAL_SETTINGS with --local)")
+    parser.add_argument("--local", action="store_true",
+                        help="with --live, use a local model through Ollama instead of Groq (no key needed)")
+    parser.add_argument("--delay", type=float, help="seconds between model calls with --live (2.5 on Groq, 0 local)")
     parser.add_argument("--view", action="store_true", help="open the 2D replay of the last run in the browser")
     args = parser.parse_args(argv)
 

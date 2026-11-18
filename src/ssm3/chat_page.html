@@ -89,7 +89,7 @@ main { grid-template-columns: minmax(0, 1fr) 400px; }
     </div>
   </aside>
 </main>
-<footer>Chat mode runs on this computer only. Every order is planned by the real model, so it uses the Groq free-tier
+<footer id="footer">Chat mode runs on this computer only. Every order is planned by the real model, so it uses the Groq free-tier
 limit. The checker, the loop and the cell are the same code as in the experiment.</footer>
 <script>
 (async function () {
@@ -154,7 +154,12 @@ __CELL_VIEW__
   // Header
   const chips = document.getElementById("chips");
   const chip = (label, value) => chips.append(el("span", { class: "chip" }, label + " ", el("b", {}, value)));
-  chip("Planner", first.uses_model ? first.model + " on Groq" : "test planner, no language model");
+  chip("Planner", first.uses_model ? first.model + " on " + first.provider : "test planner, no language model");
+  if (first.local) {
+    document.getElementById("footer").textContent = "Chat mode runs on this computer only. The planner is a local " +
+      "model through Ollama, so it needs no API key. The checker, the loop and the cell are the same code as in the " +
+      "experiment.";
+  }
   chip("Checker", "outside the model");
   const legend = document.getElementById("legend");
   for (const p of ["SPACER_SHORT", "SPACER_LONG", "SPACER_BLUE", "BOLT"]) {
