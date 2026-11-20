@@ -15,7 +15,14 @@ The rules of the loop:
   planner with its reason. After three rejected plans in a row the operator is
   asked once. If the next plan is still rejected, the run stops safely (DD13).
 - A question of the planner, or an ask of the checker, goes to the operator, and
-  the planner is called again with the answer.
+  the planner is called again with the answer. Every answer is also added to the
+  order text the checker reads, so an answer can settle AMBIGUOUS (OD13).
+- The checker gets the order text and the target tray next to the plan (OD13): the
+  target of a structured order when the order has one, else the target the planner
+  gave with its plan. A plan whose final tray differs from the target is rejected
+  with TARGET_MISMATCH (OD14), so an empty plan ends the closed loop only when the
+  tray is complete. RULE_OVERRIDE is rejected like any other plan and the operator
+  is told (Table 9), and it counts as one of the rejections of DD13 (proposal).
 - A refusal stops the run and the operator is told.
 - The open loop runs the whole checked plan and stops safely at a failed step
   (DD16). The closed loop runs the first step of every checked plan and then
@@ -45,7 +52,7 @@ Choices the Design Document does not settle are marked "proposal" below.
 import time
 
 from ssm3 import functions
-from ssm3.checker import check
+from ssm3.checker import ANSWER_PREFIX, check
 
 # ProviderLimit lives next to the model client that raises it. It is imported here, so run_with_provider_repeats
 # catches exactly the class call_model raises (DD14), and callers can still import it from this module.
@@ -93,6 +100,10 @@ class _Run:
 
     def __init__(self, order, variant, planner, cell, operator, log, protected, budget, failures, faults):
         self.order = order
+        # The order text the checker reads, with the operator's answers added (OD13).
+        self.order_text = order["text"]
+        # A structured order gives its own target tray. Else the planner gives one with every plan (OD13).
+        self.order_target = order.get("target")
         self.variant = variant
         self.planner = planner
         self.cell = cell
@@ -133,6 +144,7 @@ class _Run:
         self.log.event("intervention", kind=kind, source=source, question=question, answer=answer,
                        wait_seconds=round(time.perf_counter() - start, 3))
         self.history.append({"type": "answer", "question": question, "answer": answer})
+        self.order_text += f"\n{ANSWER_PREFIX} {answer}"
 
     def call_planner(self):
         self.planner_calls += 1
@@ -242,8 +254,14 @@ class _Run:
             if answer["kind"] == "refuse":
                 return self.finish("refused", answer["value"])
             plan = answer["value"]
-            verdict = check(plan, self.cell.state(), self.cell.capability, self.protected)
-            self.log.event("check_result", **verdict)
+            target = self.order_target if self.order_target is not None else answer["target"]
+            verdict = check(plan, self.cell.state(), self.cell.capability, self.protected,
+                            order_text=self.order_text, target=target)
+            # The log keeps the target, so the paper can tell a wrong reading of the order from a wrong plan (OD14).
+            self.log.event("check_result", **verdict, target=target)
+            if verdict["code"] == "RULE_OVERRIDE":
+                self.operator.tell(f"Order {self.order.get('order_id')}: {verdict['reason']}. No order can change "
+                                   "a rule of the cell.")
             if verdict["verdict"] == "reject":
                 stopped = self.reject(verdict)
                 if stopped:
@@ -265,7 +283,9 @@ def run_order(order, variant, *, planner, cell, operator, log, protected=(), exp
               faults=(), info=None):
     """Run one order from planning to the final tray and return its summary.
 
-    order is {"order_id": ..., "text": ...}. variant is "open loop" or "closed loop".
+    order is {"order_id": ..., "text": ...}, and a structured order may also give
+    "target", the full target tray (OD7, OD13). A plain-language order of the task set
+    never carries the expected tray. variant is "open loop" or "closed loop".
     planner returns the raw model answer (see the module docstring), cell is the
     simulated cell, operator a console operator and log a logger.RunLog. protected
     lists the slots the order keeps unchanged (from the task set). expected_plan

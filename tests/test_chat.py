@@ -2,6 +2,8 @@
 
 import json
 
+from target_helper import CHAPTER_13_START, add_target
+
 from ssm3 import chat, planner
 
 
@@ -10,7 +12,8 @@ def answers(*raw):
     remaining = list(raw)
 
     def fake(order, state, capability, history):
-        return remaining.pop(0)
+        # Since OD13 a plan also gives the tray it intends: here the tray the plan builds.
+        return add_target(remaining.pop(0), state, capability)
 
     return fake
 
@@ -153,7 +156,9 @@ def test_the_checker_protects_the_ticked_slots_whatever_the_order_says(tmp_path)
     assert events[0]["protected"] == ["SLOT_1", "SLOT_3"]
     assert next(e for e in events if e["event"] == "run_start")["protected"] == ["SLOT_1", "SLOT_3"]
     reject = next(e for e in events if e["event"] == "check_result")
-    assert (reject["verdict"], reject["code"]) == ("reject", "PROTECTED_SLOT")
+    # The planner's own target empties slot 1, so the order asked for a change the rules forbid (OD13).
+    assert (reject["verdict"], reject["code"]) == ("reject", "RULE_OVERRIDE")
+    assert any(e["event"] == "notice" and "No order can change a rule" in e["text"] for e in events)
     assert session.state() == before
 
 
@@ -178,7 +183,7 @@ def test_a_local_model_runs_without_a_key(tmp_path, monkeypatch):
 
     def fake_model(prompt, settings=None):
         seen.append(settings)
-        return json.dumps({"plan": []})
+        return json.dumps({"plan": [], "target": CHAPTER_13_START})
 
     monkeypatch.setattr(planner, "call_model", fake_model)
     session = chat.ChatSession(settings=planner.settings_for(local=True), log_dir=tmp_path, delay=0)

@@ -9,6 +9,7 @@ import json
 import urllib.error
 
 import pytest
+from target_helper import CHAPTER_13_TARGET
 
 from ssm3 import orchestrator, planner
 from ssm3.logger import RunLog
@@ -181,7 +182,7 @@ def test_a_groq_rate_limit_is_repeated_by_the_orchestrator(key, cell, monkeypatc
         calls["n"] += 1
         if calls["n"] == 1:
             return call_model(prompt, settings, opener=failing(429))
-        return json.dumps({"plan": chapter6_plan})
+        return json.dumps({"plan": chapter6_plan, "target": CHAPTER_13_TARGET})
 
     monkeypatch.setattr(planner, "call_model", flaky)
 

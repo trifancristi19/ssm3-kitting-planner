@@ -6,6 +6,7 @@ The planner in these tests is a fake with fixed answers, so no test calls a lang
 import json
 
 import pytest
+from target_helper import add_target
 
 from ssm3.cell import SimulatedCell
 from ssm3.console import NO_FURTHER_INFORMATION, ScriptedOperator
@@ -95,7 +96,9 @@ class FakePlanner:
     def __call__(self, order, state, capability, history):
         self.histories.append(history)
         answer = self.answers.pop(0)
-        return answer(history) if callable(answer) else answer
+        answer = answer(history) if callable(answer) else answer
+        # Since OD13 a plan also gives the tray it intends. Unless a test sets one, it is the tray the plan builds.
+        return add_target(answer, state, capability)
 
 
 def plan(steps):
@@ -285,7 +288,9 @@ def test_an_answer_that_is_not_json_is_a_format_rejection(cell, chapter6_plan):
 def test_a_protected_slot_is_never_touched(cell, chapter6_plan):
     touch_slot_1 = [{"function": "move_to", "args": {"position": "SLOT_1"}},
                     {"function": "pick", "args": {"part": "SPACER_BLUE", "source": "SLOT_1"}}]
-    planner = FakePlanner(plan(touch_slot_1), plan(chapter6_plan))
+    # The planner says it keeps slot 1 as it is, but its plan picks from it: PROTECTED_SLOT.
+    keeps_slot_1 = json.dumps({"plan": touch_slot_1, "target": cell.state()["slots"]})
+    planner = FakePlanner(keeps_slot_1, plan(chapter6_plan))
     summary, log, _ = run(cell, "open loop", planner)
     assert log.of_kind("check_result")[0]["code"] == "PROTECTED_SLOT"
     assert summary["final_state"]["slots"]["SLOT_1"] == ["SPACER_BLUE"]
@@ -363,7 +368,7 @@ def test_a_provider_limit_repeats_the_whole_run_from_a_fresh_cell(cell, chapter6
         calls["n"] += 1
         if calls["n"] == 1:
             raise ProviderLimit("429 rate limit")
-        return plan(chapter6_plan)
+        return add_target(plan(chapter6_plan), state, capability)
 
     logs = []
 

@@ -14,7 +14,9 @@ repository (NFR4).
 
 The prompt builder, the response parser and the model client work. The answer
 keys are "plan", "ask" and "refuse", the format the checker of the model tests used
-(Chapter 6). The prompt holds the parts of Chapter 7 in their order, and the pilot
+(Chapter 6). A plan also carries "target", the full tray the planner intends when
+the plan is done, so the checker knows what the order asked for (OD13, proposal: a
+new field of the planner response in Table 7). The prompt holds the parts of Chapter 7 in their order, and the pilot
 variant with only the function names is built in (DD22).
 
 call_model sends the prompt to Groq's OpenAI-compatible chat completions endpoint
@@ -41,7 +43,8 @@ from pathlib import Path
 
 # Recorded in every run log (Table 11). Raise it whenever the prompt text changes.
 # S2-P2: the empty plan for a complete order was added after the review of pull request 7.
-PROMPT_VERSION = "S2-P2"
+# S2-P3: every plan also gives the target tray the planner intends (OD13).
+PROMPT_VERSION = "S2-P3"
 
 # The model settings. The model is the proposed main planner, confirmed after the pilot (DD17), with the exact
 # model ID the model tests used on Groq. Temperature 0 and JSON output follow Chapter 7 and NFR1, and the time
@@ -99,10 +102,13 @@ and a part goes on top only when the base holds a part. The return position has 
 FUNCTIONS_NAMES = """Functions: move_to, pick, place, locate."""
 
 ANSWER_FORMAT = """Answer only with JSON in exactly one of these forms, nothing else:
-{"plan": [{"function": "move_to", "args": {"position": "SLOT_2"}}, ...]}   when you can do the order safely
-{"plan": []}   when the order is complete and nothing is left to do
+{"plan": [{"function": "move_to", "args": {"position": "SLOT_2"}}, ...], "target": {"SLOT_1": ["PART_ID"], ...}}   \
+when you can do the order safely
+{"plan": [], "target": {...}}   when the order is complete and nothing is left to do
 {"ask": "your question to the operator"}   when the order is unclear
-{"refuse": "short reason"}   when the order is impossible or not allowed"""
+{"refuse": "short reason"}   when the order is impossible or not allowed
+With every plan, target is the tray you intend when the plan is done: every tray slot, each with its parts \
+from the base up, and [] for an empty slot."""
 
 
 class ResponseFormatError(ValueError):
@@ -318,10 +324,12 @@ def call_model(prompt, settings=None, opener=None):
 def parse_response(text):
     """Parse the raw answer into a plan, a question or a refusal (response parser, Table 5).
 
-    Returns {"kind": "plan", "ask" or "refuse", "value": ...}. An answer that is not
-    exactly one of the three raises ResponseFormatError, which the orchestrator
-    treats as a rejected plan with code FORMAT. Whether the steps of a plan are
-    valid is the checker's job, so the parser only checks that the plan is a list.
+    Returns {"kind": "plan", "ask" or "refuse", "value": ...}, and for a plan also
+    "target", the tray the planner intends (OD13). An answer that is not exactly one
+    of the three, or a plan without a target, raises ResponseFormatError, which the
+    orchestrator treats as a rejected plan with code FORMAT. Whether the steps and
+    the target fit the cell is the checker's job, so the parser only checks their
+    shape: a list of steps, and an object that maps slot names to lists of part IDs.
     """
     if not isinstance(text, str):
         raise ResponseFormatError("The answer is not text")
@@ -340,7 +348,19 @@ def parse_response(text):
         raise ResponseFormatError("plan is not a list of steps")
     if kind != "plan" and (not isinstance(value, str) or not value.strip()):
         raise ResponseFormatError(f"{kind} is not a non-empty text")
-    return {"kind": kind, "value": value}
+    if kind != "plan":
+        return {"kind": kind, "value": value}
+    target = answer.get("target")
+    if not is_tray(target):
+        raise ResponseFormatError("A plan needs target: an object that maps every tray slot to a list of part IDs")
+    return {"kind": kind, "value": value, "target": target}
+
+
+def is_tray(tray):
+    """True when tray has the shape of a target tray: slot names that map to lists of part IDs (OD13)."""
+    return (isinstance(tray, dict) and all(isinstance(slot, str) for slot in tray)
+            and all(isinstance(parts, list) and all(isinstance(part, str) for part in parts)
+                    for parts in tray.values()))
 
 
 def llm_planner(settings=None, function_detail="full"):
