@@ -32,6 +32,12 @@ The rules of the loop:
 - A provider error or rate limit is logged as a provider_limit event and ends the
   attempt (DD14). The run is then repeated at most three times and marked not run
   after that, so free-tier limits do not count as planner failures (DD21).
+- A model call over its time limit (60 seconds, DD14) ends the run safely as
+  stopped, with a run_end like every other run. It is not repeated, because DD14
+  keeps a timeout apart from a provider limit.
+- A failure that the cell cannot apply, such as a slip of a part that has no bin in
+  the capability file, also ends the run as stopped before the step it was meant
+  for (proposal), so the evaluator never gets a run without an outcome.
 
 Choices the Design Document does not settle are marked "proposal" below.
 """
@@ -43,7 +49,7 @@ from ssm3.checker import check
 
 # ProviderLimit lives next to the model client that raises it. It is imported here, so run_with_provider_repeats
 # catches exactly the class call_model raises (DD14), and callers can still import it from this module.
-from ssm3.planner import ProviderLimit, ResponseFormatError, parse_response
+from ssm3.planner import ModelTimeout, ProviderLimit, ResponseFormatError, parse_response
 
 __all__ = ["FAULTS", "PROVIDER_REPEATS", "REJECTS_BEFORE_ASKING", "VARIANTS", "ProviderLimit", "run_order",
            "run_with_provider_repeats", "step_budget"]
@@ -160,12 +166,18 @@ class _Run:
         for step in steps:
             if self.steps_run >= self.budget:
                 return self.finish("stopped", f"the step budget of {self.budget} steps is used up")
-            self.steps_run += 1
-            if self.steps_run in self.failures:
-                self.inject(*self.failures[self.steps_run])
+            number = self.steps_run + 1
+            # A scheduled failure goes off first, so an armed fault then sees the state after it.
+            if number in self.failures:
+                stopped = self.inject(*self.failures[number], before=number)
+                if stopped:
+                    return stopped
             armed = self.armed_fault(step)
             if armed:
-                self.inject(*armed)
+                stopped = self.inject(*armed, before=number)
+                if stopped:
+                    return stopped
+            self.steps_run = number
             name, args = step["function"], step["args"]
             result = getattr(functions, name)(self.cell, **args)
             self.log.event("step_result", step=self.steps_run, function=name, args=args, status=result.status,
@@ -185,11 +197,16 @@ class _Run:
         # The closed loop always asks the planner again, and ends only on an empty plan (proposal, OD14).
         return None
 
-    def inject(self, kind, details):
-        self.cell.inject_failure(kind, **details)
+    def inject(self, kind, details, before):
+        """Apply a failure just before step `before`. Returns a stopped summary if the cell cannot apply it."""
+        try:
+            self.cell.inject_failure(kind, **details)
+        except ValueError as error:
+            return self.finish("stopped", f"the {kind} failure before step {before} could not be applied: {error}")
         # The state after the change goes into the log, so the replay shows it whatever the kind.
-        self.log.event("feedback", kind="injected failure", step=self.steps_run, failure=kind, details=details,
+        self.log.event("feedback", kind="injected failure", step=before, failure=kind, details=details,
                        state=self.cell.state())
+        return None
 
     def armed_fault(self, step):
         """The first armed fault that fits this step, as (kind, details), and it is used up. Else None."""
@@ -261,7 +278,8 @@ def run_order(order, variant, *, planner, cell, operator, log, protected=(), exp
     The summary holds the outcome ("done", "refused" or "stopped"), the reason, the
     number of steps, planner calls and interventions, and the final state. A
     ProviderLimit from the planner is logged as a provider_limit event and raised
-    again, so run_with_provider_repeats can repeat the run (DD14, DD21).
+    again, so run_with_provider_repeats can repeat the run (DD14, DD21). A
+    ModelTimeout ends the run as stopped, with a run_end, and is not repeated (DD14).
     """
     if variant not in VARIANTS:
         raise ValueError(f"unknown variant {variant!r}, expected one of {VARIANTS}")
@@ -278,3 +296,5 @@ def run_order(order, variant, *, planner, cell, operator, log, protected=(), exp
     except ProviderLimit as error:
         log.event("provider_limit", reason=str(error), planner_calls=run.planner_calls, steps_run=run.steps_run)
         raise
+    except ModelTimeout as error:
+        return run.finish("stopped", f"model call {run.planner_calls} timed out: {error} (DD14)")

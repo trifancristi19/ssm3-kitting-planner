@@ -18,6 +18,7 @@ from ssm3.orchestrator import (
     run_with_provider_repeats,
     step_budget,
 )
+from ssm3.planner import ModelTimeout
 
 
 def test_step_budget_is_twice_the_expected_plan(capability, chapter6_plan):
@@ -198,6 +199,42 @@ def test_open_loop_stops_when_the_part_slipped_out_before_the_place(cell, chapte
     last = log.of_kind("step_result")[-1]
     assert (last["function"], last["status"]) == ("place", "blocked")
     assert "gripper is empty" in last["message"]
+
+
+def test_a_failure_the_cell_cannot_apply_stops_the_run_before_its_step(cell, chapter6_plan):
+    # Review of pull request 10: the error used to end the log without a run_end.
+    failures = {1: ("drop_part", {})}  # the gripper is still empty before step 1
+    summary, log, _ = run(cell, "open loop", FakePlanner(plan(chapter6_plan)), failures=failures)
+    assert summary["outcome"] == "stopped" and summary["steps_run"] == 0
+    assert "drop_part failure before step 1 could not be applied" in summary["reason"]
+    assert log.of_kind("step_result") == [] and log.records[-1]["event"] == "run_end"
+
+
+def test_a_slip_of_a_part_without_a_bin_stops_the_run(capability, cell):
+    # Review of pull request 10: a held part that the capability file does not list has no bin to fall into.
+    state = cell.state()
+    state["gripper"] = "MYSTERY_PART"
+    odd = SimulatedCell(capability, state)
+    planner = FakePlanner(plan([{"function": "move_to", "args": {"position": "SLOT_4"}}]))
+    summary, log, _ = run(odd, "open loop", planner, faults=("drop_part",))
+    assert summary["outcome"] == "stopped" and summary["steps_run"] == 0
+    assert "could not be applied" in summary["reason"]
+    assert summary["final_state"]["gripper"] == "MYSTERY_PART"
+    assert log.records[-1]["event"] == "run_end"
+
+
+def test_a_model_timeout_ends_the_run_as_stopped(cell, chapter6_plan):
+    # Review of pull request 10: DD14 stops a run safely after a model call of 60 seconds.
+    def too_slow(history):
+        raise ModelTimeout("no answer within 60 seconds")
+
+    planner = FakePlanner(remaining(chapter6_plan), too_slow)
+    summary, log, operator = run(cell, "closed loop", planner, expected_plan=chapter6_plan)
+    assert summary["outcome"] == "stopped"
+    assert summary["reason"] == "model call 2 timed out: no answer within 60 seconds (DD14)"
+    assert (summary["steps_run"], summary["planner_calls"]) == (1, 2)
+    assert log.records[-1]["event"] == "run_end" and log.of_kind("provider_limit") == []
+    assert operator.messages and "stopped" in operator.messages[0]
 
 
 def test_a_grip_that_keeps_failing_ends_at_the_step_budget(cell, chapter6_plan):

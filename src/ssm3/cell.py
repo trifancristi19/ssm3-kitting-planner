@@ -148,7 +148,7 @@ class SimulatedCell:
         get hold of an awkward part. "drop_part" empties the gripper: the held part
         slips out and falls back into destination, by default the bin the capability
         file names for it, as if it slipped just after it was lifted (proposal). part,
-if given, must be the held part, so a scenario says in its log what slipped.
+        if given, must be the held part, so a scenario says in its log what slipped.
         """
         if kind == "pick_failure":
             if isinstance(times, bool) or not isinstance(times, int) or times < 1:
