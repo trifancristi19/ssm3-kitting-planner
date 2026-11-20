@@ -9,8 +9,8 @@ import pytest
 from ssm3.capability import load_capability
 
 ROOT = Path(__file__).resolve().parent.parent
-MODULES = ["baseline", "capability", "cell", "checker", "console", "evaluator",
-           "functions", "logger", "orchestrator", "planner"]
+MODULES = ["baseline", "capability", "cell", "checker", "console", "demo", "evaluator",
+           "functions", "logger", "orchestrator", "planner", "viewer", "chat", "chat_server"]
 
 
 @pytest.mark.parametrize("name", MODULES)

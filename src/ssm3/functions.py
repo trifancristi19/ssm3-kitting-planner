@@ -155,7 +155,8 @@ def pick(cell, part, source):
     if problem:
         return _result(cell, problem.status, problem.reason)
     if cell.consume_pick_failure():
-        return _result(cell, "failed", f"The pick of {part} from {source} failed")
+        return _result(cell, "failed",
+                       f"The pick of {part} from {source} failed: the gripper closed but is still empty")
     cell.take_into_gripper(part, source)
     return _result(cell, "success", f"The gripper holds {part} from {source}")
 

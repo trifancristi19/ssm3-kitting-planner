@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+:root {
+  --bg: #f4f5f7; --panel: #ffffff; --ink: #1d232b; --muted: #5d6875; --line: #d9dde3;
+  --steel: #8a96a3; --steel-dark: #59636e; --table: #e7e9ec; --tray: #dfe5ec; --pocket: #f7f9fb; --arm: #2e3b4a;
+  --run: #1f8a4c; --run-bg: #e3f4ea; --reject: #c62f2f; --reject-bg: #fbe7e7;
+  --ask: #a86400; --ask-bg: #fdf0dc; --plan: #4b4fb8; --plan-bg: #eceefc;
+  --protect: #b07a00; --accent: #2563c9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161b; --panel: #1b2027; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2e3640;
+    --steel: #7d8996; --steel-dark: #aab4bf; --table: #262d36; --tray: #2c3540; --pocket: #20272f; --arm: #4f6378;
+    --run: #4cc283; --run-bg: #173325; --reject: #f07272; --reject-bg: #3a1c1c;
+    --ask: #f0b55a; --ask-bg: #392a12; --plan: #9a9ef5; --plan-bg: #23264a;
+    --protect: #e0b040; --accent: #6ea0f0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161b; --panel: #1b2027; --ink: #e8ecf0; --muted: #9aa5b1; --line: #2e3640;
+  --steel: #7d8996; --steel-dark: #aab4bf; --table: #262d36; --tray: #2c3540; --pocket: #20272f; --arm: #4f6378;
+  --run: #4cc283; --run-bg: #173325; --reject: #f07272; --reject-bg: #3a1c1c;
+  --ask: #f0b55a; --ask-bg: #392a12; --plan: #9a9ef5; --plan-bg: #23264a;
+  --protect: #e0b040; --accent: #6ea0f0;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
+header { padding: 18px 24px 8px; }
+h1 { font-size: 22px; margin: 0 0 4px; font-weight: 650; }
+.sub { color: var(--muted); margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 11px;
+  font-size: 13px; color: var(--muted); }
+.chip b { color: var(--ink); font-weight: 600; }
+.chip.done { border-color: var(--run); color: var(--run); }
+.chip.stopped, .chip.refused { border-color: var(--reject); color: var(--reject); }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; padding: 8px 24px 24px; }
+@media (max-width: 1100px) { main { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.stage { display: flex; flex-direction: column; gap: 12px; }
+/* The banner keeps one height whatever its text, so the drawing below it never jumps. Its main line shows at most
+   two lines and the detail one, and the full text is in its title and in the event list. */
+#banner { border-radius: 10px; padding: 10px 14px; font-size: 16px; height: 88px; overflow: hidden; border: 1px solid var(--line);
+  display: flex; flex-direction: column; justify-content: center;
+  background: var(--panel); transition: background .25s, border-color .25s; }
+#banner .line { line-height: 22px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+#banner.planner { background: var(--plan-bg); border-color: var(--plan); }
+#banner.run { background: var(--run-bg); border-color: var(--run); }
+#banner.reject, #banner.failure { background: var(--reject-bg); border-color: var(--reject); }
+#banner.ask { background: var(--ask-bg); border-color: var(--ask); }
+#banner .tag { font-weight: 700; margin-right: 6px; }
+#banner.planner .tag { color: var(--plan); }
+#banner.run .tag { color: var(--run); }
+#banner.reject .tag, #banner.failure .tag { color: var(--reject); }
+#banner.ask .tag { color: var(--ask); }
+#banner .detail { display: block; color: var(--muted); font-size: 14px; line-height: 20px; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#banner .detail:empty { display: none; }
+.canvas { padding: 6px; overflow: hidden; position: relative; }
+.cell3d { display: none; }
+.canvas.show3d svg { display: none; }
+.canvas.show3d .cell3d { display: block; }
+.view-switch { position: absolute; top: 10px; right: 10px; display: flex; z-index: 1; }
+.view-switch button { padding: 3px 11px; font-size: 13px; border-radius: 0; }
+.view-switch button:first-child { border-radius: 8px 0 0 8px; }
+.view-switch button:last-child { border-radius: 0 8px 8px 0; border-left: none; }
+.view-switch button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.hint3d { display: none; position: absolute; left: 14px; bottom: 10px; font-size: 12px; color: var(--muted);
+  pointer-events: none; }
+.canvas.show3d .hint3d { display: block; }
+svg { display: block; width: 100%; height: auto; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+button, select { font: inherit; font-size: 14px; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover, select:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; min-width: 86px; }
+input[type=range] { flex: 1 1 160px; accent-color: var(--accent); }
+.count { color: var(--muted); font-size: 13px; min-width: 100px; text-align: right; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 10px; border-radius: 3px; display: inline-block; }
+aside { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; font-weight: 650; }
+.order { margin: 0; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
+.stats div { background: var(--bg); border-radius: 8px; padding: 6px 4px; }
+.stats b { display: block; font-size: 20px; }
+.stats small { color: var(--muted); font-size: 12px; }
+ol.plan { margin: 0; padding-left: 26px; font-size: 14px; }
+ol.plan li { padding: 2px 4px; border-radius: 6px; }
+ol.plan li.done { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+ol.plan li.now { background: var(--plan-bg); font-weight: 600; }
+ol.plan li.bad { background: var(--reject-bg); color: var(--reject); font-weight: 600; }
+.plan-note { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+.plan-head { font-size: 13px; margin: 0 0 6px; }
+.plan-head.run { color: var(--run); } .plan-head.reject { color: var(--reject); } .plan-head.ask { color: var(--ask); }
+#timeline { position: relative; list-style: none; margin: 0; padding: 0; max-height: 340px; overflow-y: auto; font-size: 13.5px; }
+#timeline li { padding: 5px 8px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; }
+#timeline li:hover { background: var(--bg); }
+#timeline li.current { background: var(--plan-bg); }
+#timeline li.future { opacity: .45; }
+#timeline .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; background: var(--steel); }
+#timeline .dot.planner { background: var(--plan); } #timeline .dot.run { background: var(--run); }
+#timeline .dot.reject, #timeline .dot.failure { background: var(--reject); } #timeline .dot.ask { background: var(--ask); }
+details { margin-top: 8px; font-size: 13px; }
+details pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 8px; border-radius: 8px;
+  max-height: 220px; overflow: auto; font-size: 12px; }
+footer { color: var(--muted); font-size: 13px; padding: 0 24px 24px; }
+.part-label { font: 600 11px "Segoe UI", system-ui, sans-serif; fill: #fff; pointer-events: none; }
+.pos-label { font: 600 13px "Segoe UI", system-ui, sans-serif; fill: var(--ink); }
+.group-label { font: 12px "Segoe UI", system-ui, sans-serif; fill: var(--muted); letter-spacing: .08em; }
+.small-label { font: 11px "Segoe UI", system-ui, sans-serif; fill: var(--muted); }
+/* A halo in the card colour keeps these labels readable where they cross the foot of the arm */
+.small-label, .protect-label { paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; }
+.protect-label { font: 600 11px "Segoe UI", system-ui, sans-serif; fill: var(--protect); }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">SSM3 kitting cell</h1>
+  <p class="sub" id="subtitle"></p>
+  <div class="chips" id="chips"></div>
+</header>
+<main>
+  <section class="stage">
+    <div id="banner" role="status" aria-live="polite"></div>
+    <div class="card canvas"><svg id="cell" role="img" aria-label="Side view of the kitting cell"></svg></div>
+    <div class="controls">
+      <button id="restart" title="Back to the start (Home)">Restart</button>
+      <button id="prev" title="Previous event (left arrow)">Back</button>
+      <button id="play" class="primary" title="Play or pause (space)">Play</button>
+      <button id="next" title="Next event (right arrow)">Next</button>
+      <select id="speed" title="Speed">
+        <option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option>
+        <option value="4">4x</option>
+      </select>
+      <input id="scrub" type="range" min="0" value="0" aria-label="Event">
+      <span class="count" id="count"></span>
+    </div>
+    <div class="legend" id="legend"></div>
+  </section>
+  <aside>
+    <div class="card"><h2>Order</h2><p class="order" id="order"></p></div>
+    <div class="card"><h2>So far</h2><div class="stats" id="stats"></div></div>
+    <div class="card"><h2>Current plan</h2><div id="plan"></div></div>
+    <div class="card"><h2>Events</h2><ol id="timeline"></ol></div>
+  </aside>
+</main>
+<footer>Replay of one run log, in 2D or 3D. The page only reads the log, so it cannot move anything in the cell.
+The parts and the arm follow the cell state stored after every step.</footer>
+<script id="run-data" type="application/json">__DATA__</script>
+<script>__THREE_JS__</script>
+<script>__CELL3D_JS__</script>
+<script>
+(function () {
+  "use strict";
+  const DATA = JSON.parse(document.getElementById("run-data").textContent);
+  const records = DATA.records || [];
+  const start = records.find(r => r.event === "run_start") || {};
+  const end = records.find(r => r.event === "run_end");
+  const protectedSlots = new Set(start.protected || []);
+  const SVG = "http://www.w3.org/2000/svg";
+
+  // Helpers. Text from the log always goes in through textContent, never as HTML.
+  function el(tag, attrs, ...children) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === "class") node.className = v; else node.setAttribute(k, v);
+    }
+    for (const c of children) node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    return node;
+  }
+  function svg(tag, attrs, text) {
+    const node = document.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+  const sentence = t => { t = String(t || "").trim(); t = t.charAt(0).toUpperCase() + t.slice(1); return t && !/[.!?]$/.test(t) ? t + "." : t; };
+
+  // CELL VIEW START: the drawing of the cell, also used by the chat page (chat_server.py).
+  // Parts
+  const PARTS = {
+    SPACER_SHORT: { w: 46, h: 24, color: "#e07b2a", label: "short" },
+    SPACER_LONG: { w: 70, h: 24, color: "#1f9d8a", label: "long" },
+    SPACER_BLUE: { w: 58, h: 24, color: "#2f6fd6", label: "blue" },
+    BOLT: { w: 40, h: 26, color: "#6b7785", label: "bolt", bolt: true },
+  };
+  function partInfo(name) {
+    if (PARTS[name]) return PARTS[name];
+    let hash = 0;
+    for (const ch of String(name)) hash = (hash * 31 + ch.charCodeAt(0)) % 360;
+    return { w: 56, h: 24, color: "hsl(" + hash + " 55% 45%)", label: String(name).toLowerCase().slice(0, 8) };
+  }
+  function drawPart(name, cx, bottom) {
+    const p = partInfo(name);
+    const g = svg("g", { class: "part" });
+    const top = bottom - p.h;
+    if (p.bolt) {
+      g.append(svg("rect", { x: cx - p.w / 2, y: top, width: p.w, height: 9, rx: 2, fill: p.color }));
+      g.append(svg("rect", { x: cx - 7, y: top + 9, width: 14, height: p.h - 9, rx: 2, fill: p.color }));
+      for (let y = top + 12; y < bottom - 2; y += 4) {
+        g.append(svg("line", { x1: cx - 7, x2: cx + 7, y1: y, y2: y + 2, stroke: "rgba(255,255,255,.45)", "stroke-width": 1 }));
+      }
+    } else {
+      g.append(svg("rect", { x: cx - p.w / 2, y: top, width: p.w, height: p.h, rx: 5, fill: p.color }));
+      g.append(svg("rect", { x: cx - p.w / 2 + 3, y: top + 3, width: p.w - 6, height: 4, rx: 2, fill: "rgba(255,255,255,.25)" }));
+      g.append(svg("text", { x: cx, y: top + p.h / 2 + 4, "text-anchor": "middle", class: "part-label" }, p.label));
+    }
+    return g;
+  }
+
+  // Layout of the cell, from the positions in the state
+  let state0 = DATA.initial_state || (end && end.final_state) || { bins: {}, slots: {}, return: [], gripper: null, arm: "HOME" };
+  const bins = Object.keys(state0.bins || {});
+  const slots = Object.keys(state0.slots || {});
+  const X = {}; let x = 70;
+  X.HOME = x; x += 110;
+  for (const b of bins) { X[b] = x; x += 96; }
+  x += 34; const trayLeft = x - 52;
+  for (const s of slots) { X[s] = x; x += 96; }
+  const trayRight = x - 44; x += 40;
+  X.RETURN = x; x += 70;
+  const W = x; const H = 380, TOP = -130;  // TOP leaves room above the table for the elbow of the arm
+  const TABLE = 300, BIN_H = 64, POCKET_H = 62, LEVEL = 27, REST_Y = 130;
+  const cell = document.getElementById("cell");
+  cell.setAttribute("viewBox", "0 " + TOP + " " + W + " " + (H - TOP));
+  const bottomOf = pos => (pos in (state0.slots || {}) ? TABLE - 8 : TABLE - 6);
+
+  const staticLayer = svg("g"), partLayer = svg("g"), looseLayer = svg("g"), flagLayer = svg("g"), armLayer = svg("g");
+  // The "keep unchanged" labels go above the arm, so the shoulder of the arm never hides them.
+  const labelLayer = svg("g");
+  cell.append(staticLayer, partLayer, looseLayer, flagLayer, armLayer, labelLayer);
+
+  // 3D view (cell3d.js): every drawing call below also goes to the 3D scene, so both views show the same state.
+  // A switch on the card picks the view. Without WebGL the switch is not shown and the page keeps the 2D view.
+  const cellCard = cell.parentNode;
+  const host3d = document.createElement("div");
+  host3d.className = "cell3d";
+  cellCard.append(host3d);
+  const view3d = typeof createCell3D === "function" ? createCell3D(host3d, { X, bins, slots, W, TABLE, LEVEL,
+    BIN_H, POCKET_H, trayLeft, trayRight, bottomOf, partInfo: name => partInfo(name), protectedSlots }) : null;
+  if (view3d) {
+    const VIEW_KEY = "ssm3-cell-view";
+    const buttons = {};
+    const switcher = document.createElement("div");
+    switcher.className = "view-switch";
+    const hint = document.createElement("div");
+    hint.className = "hint3d";
+    hint.textContent = "Drag to turn, Ctrl + scroll to zoom, double-click for the first view";
+    const choose = mode => {
+      cellCard.classList.toggle("show3d", mode === "3d");
+      for (const [m, b] of Object.entries(buttons)) b.setAttribute("aria-pressed", String(m === mode));
+      if (mode === "3d") view3d.resize();
+      try { localStorage.setItem(VIEW_KEY, mode); } catch (e) { /* storage blocked: the choice is not kept */ }
+    };
+    for (const mode of ["2d", "3d"]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = mode.toUpperCase();
+      b.title = mode === "3d" ? "3D view: drag to turn, Ctrl + scroll to zoom" : "2D side view";
+      b.addEventListener("click", () => choose(mode));
+      buttons[mode] = b;
+      switcher.append(b);
+    }
+    cellCard.append(switcher, hint);
+    let saved = null;
+    try { saved = localStorage.getItem(VIEW_KEY); } catch (e) { /* storage blocked */ }
+    choose(saved === "2d" ? "2d" : "3d");
+  }
+
+  function drawStatic() {
+    if (view3d) view3d.drawStatic();
+    labelLayer.replaceChildren();
+    staticLayer.append(svg("rect", { x: 20, y: TABLE, width: W - 40, height: 14, rx: 3, fill: "var(--table)" }));
+    // The foot of the arm, in the middle behind the bins and the tray (cellArmPose in cell3d.js)
+    staticLayer.append(svg("rect", { x: W / 2 - 34, y: TABLE - CELL_ARM.shoulder, width: 68, height: CELL_ARM.shoulder, rx: 10, fill: "var(--arm)" }));
+    staticLayer.append(svg("rect", { x: W / 2 - 43, y: TABLE - 8, width: 86, height: 8, rx: 2, fill: "var(--steel)" }));
+    // HOME
+    staticLayer.append(svg("rect", { x: X.HOME - 30, y: TABLE - 4, width: 60, height: 4, rx: 2, fill: "var(--steel)" }));
+    staticLayer.append(svg("text", { x: X.HOME, y: TABLE + 34, "text-anchor": "middle", class: "pos-label" }, "HOME"));
+    // Bins
+    for (const b of bins) {
+      const bx = X[b];
+      staticLayer.append(svg("path", { d: "M" + (bx - 42) + " " + (TABLE - BIN_H) + " L" + (bx - 38) + " " + TABLE + " L" + (bx + 38) + " " + TABLE +
+        " L" + (bx + 42) + " " + (TABLE - BIN_H), fill: "var(--pocket)", stroke: "var(--steel)", "stroke-width": 3, "stroke-linejoin": "round" }));
+      staticLayer.append(svg("text", { x: bx, y: TABLE + 34, "text-anchor": "middle", class: "pos-label" }, b));
+    }
+    if (bins.length) {
+      staticLayer.append(svg("text", { x: (X[bins[0]] + X[bins[bins.length - 1]]) / 2, y: TABLE + 58, "text-anchor": "middle", class: "group-label" }, "PART BINS"));
+    }
+    // Tray
+    staticLayer.append(svg("rect", { x: trayLeft, y: TABLE - POCKET_H - 10, width: trayRight - trayLeft, height: POCKET_H + 10, rx: 8,
+      fill: "var(--tray)", stroke: "var(--steel)", "stroke-width": 2 }));
+    for (const s of slots) {
+      const sx = X[s];
+      const isProtected = protectedSlots.has(s);
+      staticLayer.append(svg("rect", { x: sx - 42, y: TABLE - POCKET_H - 4, width: 84, height: POCKET_H - 4, rx: 5,
+        fill: "var(--pocket)", stroke: isProtected ? "var(--protect)" : "var(--line)", "stroke-width": isProtected ? 2 : 1,
+        "stroke-dasharray": isProtected ? "5 4" : "none" }));
+      staticLayer.append(svg("line", { x1: sx - 38, x2: sx + 38, y1: TABLE - 8 - LEVEL, y2: TABLE - 8 - LEVEL,
+        stroke: "var(--line)", "stroke-dasharray": "3 4" }));
+      staticLayer.append(svg("text", { x: sx, y: TABLE + 34, "text-anchor": "middle", class: "pos-label" }, s));
+      if (isProtected) labelLayer.append(svg("text", { x: sx, y: TABLE - POCKET_H - 18, "text-anchor": "middle", class: "protect-label" }, "keep unchanged"));
+    }
+    if (slots.length) {
+      const first = X[slots[0]];
+      staticLayer.append(svg("text", { x: first - 46, y: TABLE - 12, "text-anchor": "end", class: "small-label" }, "base"));
+      staticLayer.append(svg("text", { x: first - 46, y: TABLE - 12 - LEVEL, "text-anchor": "end", class: "small-label" }, "top"));
+      staticLayer.append(svg("text", { x: (trayLeft + trayRight) / 2, y: TABLE + 58, "text-anchor": "middle", class: "group-label" }, "KIT TRAY"));
+    }
+    // Return
+    staticLayer.append(svg("rect", { x: X.RETURN - 40, y: TABLE - BIN_H, width: 80, height: BIN_H, rx: 6, fill: "var(--pocket)",
+      stroke: "var(--steel)", "stroke-width": 3 }));
+    staticLayer.append(svg("text", { x: X.RETURN, y: TABLE + 34, "text-anchor": "middle", class: "pos-label" }, "RETURN"));
+  }
+
+  function stackOf(state, pos) {
+    if (pos in state.bins) return state.bins[pos];
+    if (pos in state.slots) return state.slots[pos];
+    if (pos === "RETURN") return state.return;
+    return null;
+  }
+  function stackTop(state, pos) {
+    const stack = stackOf(state, pos) || [];
+    const step = pos in state.slots ? LEVEL : 26;
+    return bottomOf(pos) - stack.length * step;
+  }
+  function drawParts(state) {
+    if (view3d) view3d.drawParts(state);
+    partLayer.replaceChildren();
+    const draw = (pos, list, step) => list.forEach((name, i) => partLayer.append(drawPart(name, X[pos], bottomOf(pos) - i * step)));
+    for (const b of bins) draw(b, state.bins[b] || [], 26);
+    for (const s of slots) draw(s, state.slots[s] || [], LEVEL);
+    draw("RETURN", state.return || [], 26);
+  }
+  function drawFlag(pos, kind) {
+    if (view3d) view3d.drawFlag(pos, kind);
+    flagLayer.replaceChildren();
+    if (!pos || X[pos] === undefined) return;
+    const color = kind === "reject" ? "var(--reject)" : "var(--ask)";
+    flagLayer.append(svg("rect", { x: X[pos] - 48, y: TABLE - POCKET_H - 30, width: 96, height: POCKET_H + 34, rx: 10,
+      fill: "none", stroke: color, "stroke-width": 4, opacity: 0.9 }));
+  }
+  function drawArm(ax, ay, holding) {
+    if (view3d) view3d.drawArm(ax, ay, holding);
+    armLayer.replaceChildren();
+    // The same pose as in 3D, seen from the front: the links, the joints, the flange and the gripper.
+    const p = cellArmPose({ W, TABLE }, ax, ay);
+    const pt = q => [q[0] + W / 2, TABLE - q[1]];
+    const link = (a, b, width) => armLayer.append(svg("line", { x1: pt(a)[0], y1: pt(a)[1], x2: pt(b)[0], y2: pt(b)[1],
+      stroke: "var(--arm)", "stroke-width": width, "stroke-linecap": "round" }));
+    const joint = (q, r) => armLayer.append(svg("circle", { cx: pt(q)[0], cy: pt(q)[1], r, fill: "var(--arm)", stroke: "var(--steel)", "stroke-width": 3 }));
+    link(p.shoulder, p.elbow, 44); link(p.elbow, p.wrist, 34); link(p.wrist, p.flange, 30);
+    joint(p.shoulder, 32); joint(p.elbow, 26); joint(p.wrist, 20);
+    ax = pt(p.flange)[0];
+    ay = pt(p.flange)[1] + CELL_ARM.flangeAbove;  // again from the pose, in case the target was out of reach
+    armLayer.append(svg("rect", { x: ax - 21, y: ay - 46, width: 42, height: 6, rx: 2, fill: "var(--steel)" }));
+    armLayer.append(svg("rect", { x: ax - 19, y: ay - 40, width: 38, height: 36, rx: 4, fill: "var(--pocket)", stroke: "var(--steel)", "stroke-width": 2 }));
+    const open = holding ? partInfo(holding).w / 2 + 4 : 24;
+    armLayer.append(svg("rect", { x: ax - open - 5, y: ay - 4, width: 5, height: 18, rx: 2, fill: "var(--steel-dark)" }));
+    armLayer.append(svg("rect", { x: ax + open, y: ay - 4, width: 5, height: 18, rx: 2, fill: "var(--steel-dark)" }));
+    if (holding) armLayer.append(drawPart(holding, ax, ay + 14 + partInfo(holding).h - 2));
+  }
+
+  // A loose part on its way down, when a part slips out of the gripper. A name of null clears it.
+  function drawLoose(name, cx, bottom) {
+    if (view3d) view3d.drawLoose(name, cx, bottom);
+    looseLayer.replaceChildren();
+    if (name) looseLayer.append(drawPart(name, cx, bottom));
+  }
+
+  // A part that slips out of the gripper at x falls into the bin dest. after is the state once it lies there.
+  // done is called when it lands. Returns an object whose stop() ends the fall at once.
+  function fallInto(part, x, dest, after, ms, done) {
+    const without = clone(after);
+    without.bins[dest].pop();
+    const startBottom = REST_Y + 12 + partInfo(part).h, endBottom = bottomOf(dest) - without.bins[dest].length * 26;
+    const t0 = performance.now();
+    let stopped = false;
+    drawParts(without);
+    drawArm(x, REST_Y, null);
+    const tick = now => {
+      if (stopped) return;
+      const t = Math.min(1, (now - t0) / ms);
+      drawLoose(part, x + (X[dest] - x) * t, startBottom + (endBottom - startBottom) * t * t);
+      if (t < 1) requestAnimationFrame(tick); else { drawLoose(null); drawParts(after); if (done) done(); }
+    };
+    requestAnimationFrame(tick);
+    return { stop() { stopped = true; drawLoose(null); } };
+  }
+  // The bin a slipped part fell into: the one the log names, else the bin that gained a part.
+  function fallenInto(details, before, after) {
+    const named = details && details.destination;
+    if (named && after.bins[named]) return named;
+    return Object.keys(after.bins).find(b => (after.bins[b] || []).length > (before.bins[b] || []).length) || null;
+  }
+
+  // CELL VIEW END
+  // Frames: the start, then one frame per event of the log
+  function parsePlan(raw) {
+    try {
+      const a = JSON.parse(raw);
+      if (a && Array.isArray(a.plan)) return { kind: "plan", steps: a.plan };
+      if (a && typeof a.ask === "string") return { kind: "ask", text: a.ask };
+      if (a && typeof a.refuse === "string") return { kind: "refuse", text: a.refuse };
+    } catch (e) { /* not JSON */ }
+    return { kind: "unreadable" };
+  }
+  function stepText(step) {
+    const a = (step && step.args) || {};
+    switch (step && step.function) {
+      case "move_to": return "Move to " + a.position;
+      case "pick": return "Pick " + a.part + " from " + a.source;
+      case "place": return "Place " + a.part + " in " + a.slot + (a.level ? ", " + a.level + " level" : "");
+      case "locate": return "Locate " + a.part;
+      default: return (step && step.function) + " " + JSON.stringify(a);
+    }
+  }
+  function stepPosition(step) {
+    const a = (step && step.args) || {};
+    return a.slot || a.source || a.position || null;
+  }
+
+  const frames = [];
+  let state = clone(state0);
+  let plan = null, planDone = 0, verdict = null, rejectStep = null;
+  const counters = { calls: 0, steps: 0, rejects: 0, questions: 0 };
+  frames.push({ kind: "start", record: start, state: clone(state), prev: clone(state), plan: null, planDone: 0, verdict: null, counters: { ...counters } });
+  for (const r of records) {
+    if (r.event === "run_start") continue;
+    const prev = clone(state);
+    let flag = null;
+    if (r.event === "planner_response") { counters.calls++; plan = parsePlan(r.raw); planDone = 0; verdict = null; rejectStep = null; }
+    else if (r.event === "check_result") {
+      verdict = r.verdict; rejectStep = r.step;
+      if (r.verdict === "reject") {
+        counters.rejects++;
+        if (plan && plan.kind === "plan" && r.step) flag = { pos: stepPosition(plan.steps[r.step - 1]), kind: "reject" };
+      }
+    }
+    else if (r.event === "step_result") { counters.steps++; planDone++; state = clone(r.state); }
+    else if (r.event === "feedback" && r.kind === "injected failure") {
+      const d = r.details || {};
+      if (r.state) state = clone(r.state);
+      else if (d.source) {  // an older log without the state: work out the moved part
+        const from = stackOf(state, d.source), to = stackOf(state, d.destination);
+        if (from && to && from.includes(d.part)) { from.splice(from.lastIndexOf(d.part), 1); to.push(d.part); }
+      }
+      flag = { pos: r.failure === "pick_failure" ? state.arm : d.destination, kind: "ask" };
+    }
+    else if (r.event === "intervention") counters.questions++;
+    else if (r.event === "run_end" && r.final_state) state = clone(r.final_state);
+    frames.push({ kind: r.event, record: r, state: clone(state), prev, plan, planDone, verdict, rejectStep, flag, counters: { ...counters } });
+  }
+
+  // Words for each event
+  function describe(f) {
+    const r = f.record;
+    switch (f.kind) {
+      case "start": return { cls: "", tag: "Ready.", text: "The arm is at " + (f.state.arm || "HOME") + ". Press Play to replay the run.", detail: "" };
+      case "planner_response": {
+        const p = f.plan, secs = r.seconds !== undefined ? " in " + r.seconds + " s" : "";
+        let text = "could not be read";
+        if (p.kind === "plan") text = p.steps.length ? "a plan of " + plural(p.steps.length, "step") : "an empty plan: the order is complete";
+        if (p.kind === "ask") text = "a question for the operator";
+        if (p.kind === "refuse") text = "a refusal";
+        return { cls: "planner", tag: "Planner call " + r.call + ":", text: "answered with " + text + secs + ".", detail: "" };
+      }
+      case "check_result":
+        if (r.verdict === "run") return { cls: "run", tag: "Checker: RUN.", text: sentence(r.reason), detail: "Every step was replayed on a copy of the cell first, so nothing moves before this." };
+        if (r.verdict === "reject") return { cls: "reject", tag: "Checker: REJECT" + (r.step ? " at step " + r.step : "") + ", " + r.code + ".",
+          text: sentence(r.reason), detail: "Nothing moves. The reason goes back to the planner." };
+        return { cls: "ask", tag: "Checker: ASK.", text: sentence(r.reason), detail: "" };
+      case "step_result": {
+        const ok = r.status === "success";
+        return { cls: ok ? "" : "failure", tag: "Step " + r.step + ":", text: stepText(r) + (ok ? "." : ", " + r.status + "."), detail: ok ? sentence(r.message) : sentence(r.message) };
+      }
+      case "feedback":
+        if (r.kind === "injected failure") {
+          const d = r.details || {};
+          if (r.failure === "pick_failure") {
+            const times = d.times || 1;
+            return { cls: "ask", tag: "Gripper fault:", text: (times === 1 ? "the next pick fails" : "the next " + times + " picks fail") + ": the gripper closes but gets no hold on the part.",
+              detail: "Injected before step " + r.step + ", to show what the system does next." };
+          }
+          if (r.failure === "drop_part") {
+            return { cls: "ask", tag: "Gripper fault:", text: (d.part || "the part") + " slips out of the gripper and falls back into " + (d.destination || "its bin") + ".",
+              detail: "Injected before step " + r.step + ". The gripper is empty now, and the next state shows it." };
+          }
+          return { cls: "ask", tag: "Something changed:", text: "someone moves " + d.part + " from " + d.source + " to " + d.destination + ".", detail: "Injected before step " + r.step + ", as in Chapter 13." };
+        }
+        return { cls: "failure", tag: "Feedback:", text: "the failed step goes back to the planner with the new state.", detail: sentence(r.message) };
+      case "intervention": return { cls: "ask", tag: "Operator:", text: sentence(r.question), detail: "Answer: " + r.answer };
+      case "provider_limit": return { cls: "failure", tag: "Provider limit:", text: sentence(r.reason), detail: "The run is repeated later and does not count as a planner failure." };
+      case "run_end": {
+        const c = f.counters;
+        return { cls: r.outcome === "done" ? "run" : "reject", tag: "Result: " + String(r.outcome).toUpperCase() + ".", text: sentence(r.reason),
+          detail: plural(r.steps_run, "step") + ", " + plural(r.planner_calls, "planner call") + ", " + plural(c.rejects, "rejected plan") + ", " + plural(r.interventions, "operator question") + "." };
+      }
+      default: return { cls: "", tag: f.kind, text: "", detail: "" };
+    }
+  }
+
+  // Header and side cards
+  const isLive = start.planner === "llm";
+  document.getElementById("subtitle").textContent = "Replay of run " + (start.run_id || "") + (start.time ? ", recorded " + start.time.slice(0, 16).replace("T", " ") + " UTC" : "");
+  const chips = document.getElementById("chips");
+  const chip = (label, value, cls) => chips.append(el("span", { class: "chip " + (cls || "") }, label + " ", el("b", {}, value)));
+  chip("Order", start.order_id || "?");
+  chip("Loop", start.variant || "?");
+  chip("Planner", isLive ? (start.model || "language model") + " on " + (start.provider || "?") : "scripted, no language model");
+  if (end) chip("Outcome", String(end.outcome).toUpperCase(), end.outcome);
+  document.getElementById("order").textContent = start.instruction || "";
+  const legend = document.getElementById("legend");
+  const seen = new Set();
+  for (const f of frames) for (const list of [...Object.values(f.state.bins), ...Object.values(f.state.slots), f.state.return, [f.state.gripper]]) for (const p of list || []) if (p) seen.add(p);
+  for (const p of seen) {
+    const sw = el("i"); sw.style.background = partInfo(p).color;
+    legend.append(el("span", {}, sw, p));
+  }
+  if (protectedSlots.size) {
+    const sw = el("i"); sw.style.border = "2px dashed var(--protect)"; sw.style.background = "transparent";
+    legend.append(el("span", {}, sw, "protected slot"));
+  }
+
+  const timeline = document.getElementById("timeline");
+  frames.forEach((f, i) => {
+    const d = describe(f);
+    const li = el("li", {}, el("span", { class: "dot " + d.cls }), el("span", {}, d.tag + " " + d.text));
+    li.addEventListener("click", () => { stop(); show(i, false); });
+    timeline.append(li);
+  });
+
+  function renderSide(f) {
+    const c = f.counters;
+    const stats = document.getElementById("stats");
+    stats.replaceChildren(...[["Planner calls", c.calls], ["Steps", c.steps], ["Rejected", c.rejects], ["Questions", c.questions]]
+      .map(([label, n]) => el("div", {}, el("b", {}, n), el("small", {}, label))));
+    const box = document.getElementById("plan");
+    box.replaceChildren();
+    const p = f.plan;
+    if (!p) { box.append(el("p", { class: "plan-note" }, "No plan yet.")); return; }
+    if (p.kind !== "plan") {
+      box.append(el("p", { class: "plan-note" }, p.kind === "unreadable" ? "The answer could not be read (FORMAT)." : (p.kind === "ask" ? "Question: " : "Refusal: ") + p.text));
+    } else if (!p.steps.length) {
+      box.append(el("p", { class: "plan-note" }, "Empty plan: the planner says the order is complete."));
+    } else {
+      const head = f.verdict === "run" ? ["run", "Checked: can run"] : f.verdict === "reject" ? ["reject", "Rejected by the checker"] : f.verdict === "ask" ? ["ask", "The checker asks the operator"] : ["", "Waiting for the checker"];
+      box.append(el("p", { class: "plan-head " + head[0] }, head[1]));
+      const ol = el("ol", { class: "plan" });
+      p.steps.forEach((s, i) => {
+        let cls = "";
+        if (f.verdict === "reject" && f.rejectStep === i + 1) cls = "bad";
+        else if (i < f.planDone) cls = f.kind === "step_result" && i === f.planDone - 1 ? "now" : "done";
+        ol.append(el("li", { class: cls }, stepText(s)));
+      });
+      box.append(ol);
+      if ((start.variant || "") === "closed loop" && f.verdict === "run") box.append(el("p", { class: "plan-note" }, "Closed loop: only the first step runs, then the planner is asked again with the new state."));
+    }
+    if (f.kind === "planner_response" && f.record.raw !== undefined) {
+      const det = el("details", {}, el("summary", {}, "Raw answer of the planner"), el("pre", {}, String(f.record.raw)));
+      box.append(det);
+    }
+  }
+
+  function renderBanner(f) {
+    const d = describe(f), b = document.getElementById("banner");
+    b.className = d.cls;
+    b.title = [d.tag, d.text, d.detail].filter(Boolean).join(" ");
+    b.replaceChildren(el("span", { class: "line" }, el("span", { class: "tag" }, d.tag), d.text), el("span", { class: "detail" }, d.detail));
+  }
+
+  // Playback
+  let index = 0, timer = null, anim = null, fall = null;
+  const speedSel = document.getElementById("speed"), scrub = document.getElementById("scrub"), playBtn = document.getElementById("play");
+  scrub.max = String(frames.length - 1);
+  const restPos = s => [X[s.arm] !== undefined ? X[s.arm] : X.HOME, REST_Y];
+
+  function show(i, animate) {
+    index = Math.max(0, Math.min(frames.length - 1, i));
+    const f = frames[index];
+    if (anim) { cancelAnimationFrame(anim); anim = null; }
+    if (fall) { fall.stop(); fall = null; }
+    renderBanner(f); renderSide(f);
+    drawFlag(f.flag && f.flag.pos, f.flag && f.flag.kind);
+    scrub.value = String(index);
+    document.getElementById("count").textContent = "Event " + index + " of " + (frames.length - 1);
+    [...timeline.children].forEach((li, j) => { li.className = j === index ? "current" : j > index ? "future" : ""; });
+    const cur = timeline.children[index];
+    // Scroll only the event list, never the page.
+    if (cur && (cur.offsetTop < timeline.scrollTop || cur.offsetTop + cur.offsetHeight > timeline.scrollTop + timeline.clientHeight)) {
+      timeline.scrollTop = cur.offsetTop - timeline.clientHeight / 2;
+    }
+    // A failed pick is drawn too: the arm goes down and comes up empty.
+    const failedPick = f.kind === "step_result" && f.record.function === "pick" && f.record.status === "failed";
+    if (animate && f.kind === "step_result" && (f.record.status === "success" || failedPick)) animateStep(f);
+    else if (animate && f.kind === "feedback" && f.record.failure === "drop_part" && f.prev.gripper) animateDrop(f);
+    else { drawParts(f.state); const [ax, ay] = restPos(f.state); drawArm(ax, ay, f.state.gripper); }
+  }
+
+  function animateStep(f) {
+    const prev = f.prev, next = f.state, r = f.record;
+    const [x0] = restPos(prev), [x1] = restPos(next);
+    const dur = 900 / Number(speedSel.value);
+    const t0 = performance.now();
+    const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    if (r.function === "move_to") {
+      drawParts(prev);
+      const tick = now => {
+        const t = Math.min(1, (now - t0) / dur);
+        drawArm(x0 + (x1 - x0) * ease(t), REST_Y, prev.gripper);
+        if (t < 1) anim = requestAnimationFrame(tick); else { anim = null; drawParts(next); drawArm(x1, REST_Y, next.gripper); }
+      };
+      anim = requestAnimationFrame(tick);
+    } else if (r.function === "pick" || r.function === "place") {
+      const pos = r.function === "pick" ? r.args.source : r.args.slot;
+      const holding = r.function === "pick" ? next.gripper : prev.gripper;
+      const partH = holding ? partInfo(holding).h : 24;
+      const low = r.function === "pick" ? stackTop(prev, pos) - 14 : stackTop(prev, pos) - partH - 12;
+      let swapped = false;
+      drawParts(prev);
+      const tick = now => {
+        const t = Math.min(1, (now - t0) / dur);
+        const down = t < .5 ? ease(t * 2) : ease((1 - t) * 2);
+        if (!swapped && t >= .5) { swapped = true; drawParts(next); }
+        drawArm(x1, REST_Y + (low - REST_Y) * down, swapped ? next.gripper : prev.gripper);
+        if (t < 1) anim = requestAnimationFrame(tick); else { anim = null; drawArm(x1, REST_Y, next.gripper); }
+      };
+      anim = requestAnimationFrame(tick);
+    } else { drawParts(next); drawArm(x1, REST_Y, next.gripper); }
+  }
+
+  // The held part falls from the gripper into the bin it lands in.
+  function animateDrop(f) {
+    const prev = f.prev, next = f.state, dest = fallenInto(f.record.details, prev, next);
+    const [ax] = restPos(prev);
+    if (!dest || X[dest] === undefined) { drawParts(next); drawArm(ax, REST_Y, next.gripper); return; }
+    fall = fallInto(prev.gripper, ax, dest, next, 700 / Number(speedSel.value), () => { fall = null; });
+  }
+
+  function holdFor(f) {
+    const base = { start: 900, planner_response: 1700, check_result: 1900, step_result: 1300, feedback: 2200, intervention: 2600, run_end: 3000, provider_limit: 2600 }[f.kind] || 1500;
+    return base / Number(speedSel.value);
+  }
+  function tickPlay() {
+    if (index >= frames.length - 1) { stop(); return; }
+    show(index + 1, true);
+    timer = setTimeout(tickPlay, holdFor(frames[index]));
+  }
+  function play() {
+    if (index >= frames.length - 1) show(0, false);
+    playBtn.textContent = "Pause";
+    timer = setTimeout(tickPlay, 400);
+  }
+  function stop() { clearTimeout(timer); timer = null; playBtn.textContent = "Play"; }
+
+  playBtn.addEventListener("click", () => (timer ? stop() : play()));
+  document.getElementById("next").addEventListener("click", () => { stop(); show(index + 1, true); });
+  document.getElementById("prev").addEventListener("click", () => { stop(); show(index - 1, false); });
+  document.getElementById("restart").addEventListener("click", () => { stop(); show(0, false); });
+  scrub.addEventListener("input", () => { stop(); show(Number(scrub.value), false); });
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+    if (e.key === " ") { e.preventDefault(); timer ? stop() : play(); }
+    else if (e.key === "ArrowRight") { stop(); show(index + 1, true); }
+    else if (e.key === "ArrowLeft") { stop(); show(index - 1, false); }
+    else if (e.key === "Home") { stop(); show(0, false); }
+  });
+
+  drawStatic();
+  show(0, false);
+})();
+</script>
+</body>
+</html>
