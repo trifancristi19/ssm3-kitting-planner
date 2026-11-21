@@ -12,6 +12,7 @@ Study 1, the model tests (353 runs), is finished. Its task set and checker are i
 
 ```
 config/capability_example.json   example capability file from Design Document Chapter 6
+config/capability_kitting.json   brick list proposed for OD11: 2x2 and 2x4 bricks in three colours
 src/ssm3/                        the system, one module per component (Design Document Chapter 4)
   planner.py                     LLM planner, Task A (Chapter 7)
   checker.py                     checker, Task B (Chapter 8)
