@@ -3,9 +3,10 @@
 One capability file feeds both the planner prompt and the checker, so the two can
 never describe a different cell (NFR2, decision DD5). The file lists the named
 positions, the part IDs and the limits. config/capability_example.json is the
-example from Chapter 6, with names invented for illustration. The real list of
-parts is open decision OD11. config/capability_kitting.json holds the proposal of
-OD11: 2x2 and 2x4 bricks in three colours, six part types, one bin each.
+example from Chapter 6, with names invented for illustration.
+config/capability_kitting.json holds the parts and bins of DD24, agreed by the
+team on 22 November 2026: 2x2 and 2x4 bricks in three colours, six part types,
+one bin each.
 """
 
 import json
