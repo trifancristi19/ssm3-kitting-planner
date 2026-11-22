@@ -1,6 +1,6 @@
-"""Target trays for fake planners in the tests (OD13).
+"""Target trays for fake planners in the tests (DD25).
 
-Since OD13 every plan of the planner also gives the tray it intends. A fake planner
+Since DD25 every plan of the planner also gives the tray it intends. A fake planner
 in a test usually means "the tray my plan builds", so add_target works that out by
 replaying the plan on a copy of the cell. A test that needs another target gives
 it in the answer itself, and add_target leaves that answer alone.

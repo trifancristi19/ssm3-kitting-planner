@@ -97,7 +97,7 @@ class FakePlanner:
         self.histories.append(history)
         answer = self.answers.pop(0)
         answer = answer(history) if callable(answer) else answer
-        # Since OD13 a plan also gives the tray it intends. Unless a test sets one, it is the tray the plan builds.
+        # Since DD25 a plan also gives the tray it intends. Unless a test sets one, it is the tray the plan builds.
         return add_target(answer, state, capability)
 
 
@@ -147,7 +147,7 @@ def test_closed_loop_calls_the_planner_after_every_step(cell, chapter6_plan):
 
 
 def test_closed_loop_rejects_a_planner_that_sends_only_the_next_step(cell, chapter6_plan):
-    # Since OD14 the planner sends the full remaining plan (team answer of 22 November 2026). A plan of only
+    # Since DD26 the planner sends the full remaining plan (team answer of 22 November 2026). A plan of only
     # the next step does not end at the target, so it gets TARGET_MISMATCH and nothing moves.
     def next_step(history):
         done = sum(1 for event in history if event["type"] == "step" and event["status"] == "success")
@@ -214,7 +214,7 @@ def test_a_failure_the_cell_cannot_apply_stops_the_run_before_its_step(cell, cha
 
 def test_a_slip_of_a_part_without_a_bin_stops_the_run(capability, cell):
     # Review of pull request 10: a held part that the capability file does not list has no bin to fall into.
-    # The part is known, so the plan may place it, but the capability file gives it no bin (OD14: the plan ends
+    # The part is known, so the plan may place it, but the capability file gives it no bin (DD26: the plan ends
     # with an empty gripper, so it places the part).
     capability["parts"]["MYSTERY_PART"] = None
     state = cell.state()

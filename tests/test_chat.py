@@ -12,7 +12,7 @@ def answers(*raw):
     remaining = list(raw)
 
     def fake(order, state, capability, history):
-        # Since OD13 a plan also gives the tray it intends: here the tray the plan builds.
+        # Since DD25 a plan also gives the tray it intends: here the tray the plan builds.
         return add_target(remaining.pop(0), state, capability)
 
     return fake
@@ -156,7 +156,7 @@ def test_the_checker_protects_the_ticked_slots_whatever_the_order_says(tmp_path)
     assert events[0]["protected"] == ["SLOT_1", "SLOT_3"]
     assert next(e for e in events if e["event"] == "run_start")["protected"] == ["SLOT_1", "SLOT_3"]
     reject = next(e for e in events if e["event"] == "check_result")
-    # The planner's own target empties slot 1, so the order asked for a change the rules forbid (OD13).
+    # The planner's own target empties slot 1, so the order asked for a change the rules forbid (DD25).
     assert (reject["verdict"], reject["code"]) == ("reject", "RULE_OVERRIDE")
     assert any(e["event"] == "notice" and "No order can change a rule" in e["text"] for e in events)
     assert session.state() == before

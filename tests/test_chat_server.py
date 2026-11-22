@@ -14,7 +14,7 @@ PLAN = json.dumps({"plan": [{"function": "move_to", "args": {"position": "BIN_1"
 
 def session(tmp_path, *raw):
     remaining = list(raw)
-    # Since OD13 a plan also gives the tray it intends: here the tray the plan builds, unless the answer gives one.
+    # Since DD25 a plan also gives the tray it intends: here the tray the plan builds, unless the answer gives one.
     return chat.ChatSession(planner=lambda order, state, capability, history: add_target(remaining.pop(0), state,
                                                                                          capability),
                             log_dir=tmp_path, answer_seconds=1)

@@ -1,4 +1,4 @@
-"""Tests for OD13 and OD14 (Design Document, Table 14, and the team's answers of 22 November 2026).
+"""Tests for DD25 and DD26 (Design Document 0.5, Table 13, agreed on 22 November 2026).
 
 The order check before planning (AMBIGUOUS), and in the checker RULE_OVERRIDE, TARGET_CHANGED and
 TARGET_MISMATCH, on their own and inside the orchestrator loop. The brick tests use the six bricks
@@ -101,6 +101,25 @@ def test_a_clear_order_passes(bricks, text):
     assert unclear(text, bricks) is None
 
 
+@pytest.mark.parametrize("text, clear", [
+    # Review of pull request 11: here slot 1 is where the spacer goes, so it settles nothing.
+    ("Put a spacer in slot 1.", False),
+    ("Take the spacer from slot 1 to the return position.", True),
+    ("Move the spacer in slot 1 to slot 4.", True),
+    ("Replace the spacer in slot 2 with a long spacer.", True),
+    ("Remove the spacer in slot 1.", True),
+    ("Put a spacer in slot 4. Move the bolt in slot 3 to slot 4.", False),
+])
+def test_a_named_slot_settles_a_mention_only_where_the_part_is_now(cell, text, clear):
+    # The Chapter 13 start: slot 1 a blue spacer, slot 2 a short spacer, the long spacer in BIN_3.
+    assert (find_ambiguity(text, cell.state(), cell.capability) is None) == clear
+
+
+def test_the_red_brick_named_as_destination_still_asks(bricks):
+    # Slot 1 holds the 2x4 red brick, but "put the red brick in slot 1" names where a brick goes.
+    assert unclear("Put the red brick in slot 1.", bricks) is not None
+
+
 def test_an_unknown_word_asks(bricks):
     number, reason = unclear("Put the green brick in slot 4.", bricks)
     assert 'The word "green"' in reason
@@ -187,7 +206,7 @@ def test_legal_steps_that_end_at_the_wrong_tray_are_a_target_mismatch(bricks):
 
 
 def test_a_plan_must_end_with_an_empty_gripper(bricks):
-    # The planner always sends the full remaining plan (OD14): a plan that stops after a pick is not complete.
+    # The planner always sends the full remaining plan (DD26): a plan that stops after a pick is not complete.
     capability, state = bricks
     half = red_2x2_to_slot_4()[:2]
     result = check(half, state, capability, target=tray(state))
@@ -305,7 +324,7 @@ def remaining(chapter6_plan, target):
 
 
 def test_the_closed_loop_cannot_end_early_on_an_empty_plan(cell, chapter6_plan):
-    # OD14: an empty plan before the tray is complete is a TARGET_MISMATCH, so the planner has to go on.
+    # DD26: an empty plan before the tray is complete is a TARGET_MISMATCH, so the planner has to go on.
     planner = Planner(plan(chapter6_plan, CHAPTER_13_TARGET), plan([], CHAPTER_13_TARGET),
                       *[remaining(chapter6_plan, CHAPTER_13_TARGET)] * 9)
     summary, log, _ = run(cell.capability, cell.state(), CHAPTER_13_TEXT, planner, variant="closed loop",

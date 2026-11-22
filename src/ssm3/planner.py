@@ -15,7 +15,7 @@ repository (NFR4).
 The prompt builder, the response parser and the model client work. The answer
 keys are "plan", "ask" and "refuse", the format the checker of the model tests used
 (Chapter 6). A plan also carries "target", the full tray the planner intends when
-the plan is done, so the checker knows what the order asked for (OD13, proposal: a
+the plan is done, so the checker knows what the order asked for (DD25, a
 new field of the planner response in Table 7). The prompt holds the parts of Chapter 7 in their order, and the pilot
 variant with only the function names is built in (DD22).
 
@@ -43,7 +43,7 @@ from pathlib import Path
 
 # Recorded in every run log (Table 11). Raise it whenever the prompt text changes.
 # S2-P2: the empty plan for a complete order was added after the review of pull request 7.
-# S2-P3: every plan also gives the target tray the planner intends (OD13).
+# S2-P3: every plan also gives the target tray the planner intends (DD25).
 PROMPT_VERSION = "S2-P3"
 
 # The model settings. The model is the proposed main planner, confirmed after the pilot (DD17), with the exact
@@ -326,7 +326,7 @@ def parse_response(text):
     """Parse the raw answer into a plan, a question or a refusal (response parser, Table 5).
 
     Returns {"kind": "plan", "ask" or "refuse", "value": ...}, and for a plan also
-    "target", the tray the planner intends (OD13). An answer that is not exactly one
+    "target", the tray the planner intends (DD25). An answer that is not exactly one
     of the three, or a plan without a target, raises ResponseFormatError, which the
     orchestrator treats as a rejected plan with code FORMAT. Whether the steps and
     the target fit the cell is the checker's job, so the parser only checks their
@@ -358,7 +358,7 @@ def parse_response(text):
 
 
 def is_tray(tray):
-    """True when tray has the shape of a target tray: slot names that map to lists of part IDs (OD13)."""
+    """True when tray has the shape of a target tray: slot names that map to lists of part IDs (DD25)."""
     return (isinstance(tray, dict) and all(isinstance(slot, str) for slot in tray)
             and all(isinstance(parts, list) and all(isinstance(part, str) for part in parts)
                     for parts in tray.values()))

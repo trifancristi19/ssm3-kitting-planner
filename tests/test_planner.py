@@ -25,7 +25,7 @@ def test_a_plan_is_parsed_with_its_target(chapter6_plan):
 
 @pytest.mark.parametrize("target", [None, [], {"SLOT_1": "BOLT"}, {"SLOT_1": [1]}, "SLOT_1"])
 def test_a_plan_without_a_proper_target_is_a_format_error(chapter6_plan, target):
-    # OD13: every plan states the tray the planner intends.
+    # DD25: every plan states the tray the planner intends.
     answer = {"plan": chapter6_plan} if target is None else {"plan": chapter6_plan, "target": target}
     with pytest.raises(ResponseFormatError, match="target"):
         parse_response(json.dumps(answer))

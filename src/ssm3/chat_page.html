@@ -279,8 +279,13 @@ __CELL_VIEW__
           add("reject", "Checker", "REJECT" + (e.step ? " at step " + e.step : "") + ", " + e.code + ". " + sentence(e.reason) + " Nothing moves.");
           setBanner("reject", "Checker: REJECT" + (e.step ? " at step " + e.step : "") + ", " + e.code + ".", sentence(e.reason), "Nothing moves. The reason goes back to the planner.");
           drawFlag(flagFor(e), "reject");
-        } else {
-          add("ask", "Checker", "ASK. " + sentence(e.reason));
+        } else if (e.verdict === "ask") {
+          // Since DD25 the ambiguity check runs once before planning (stage "order"), so it is named as such.
+          const who = e.stage === "order" ? "Order check" : "Checker";
+          add("ask", who, "ASK" + (e.code ? ", " + e.code : "") + ". " + sentence(e.reason));
+          setBanner("ask", who + ": ASK" + (e.code ? ", " + e.code : "") + ".", sentence(e.reason),
+                    "Nothing moves. The operator answers first.");
+          drawFlag(null);
         }
         break;
       case "step_result": {

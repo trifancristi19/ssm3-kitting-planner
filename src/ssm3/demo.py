@@ -95,7 +95,7 @@ def _step(function, **args):
 
 
 def target_tray(state):
-    """The tray order K-17 asks for: slot 2 holds the long spacer, every other slot stays as it is (OD13)."""
+    """The tray order K-17 asks for: slot 2 holds the long spacer, every other slot stays as it is (DD25)."""
     tray = {slot: list(parts) for slot, parts in state["slots"].items()}
     tray[SLOT] = list(TARGET)
     return tray
@@ -313,7 +313,7 @@ def scenario_2(log_dir, out):
     state = chapter_13_state(capability, part_on_top="BOLT")
     out(tray_view(state, "Tray before:"))
     out("")
-    # Both wrong plans still name the right target tray, so the checker rejects their steps (OD13).
+    # Both wrong plans still name the right target tray, so the checker rejects their steps (DD25).
     touches_slot_1 = {"plan": [_step("move_to", position="SLOT_1"),
                                _step("pick", part="SPACER_BLUE", source="SLOT_1")], "target": target_tray(state)}
     ignores_the_bolt = {"plan": [_step("move_to", position="SLOT_2"),

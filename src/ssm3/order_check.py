@@ -1,4 +1,4 @@
-"""Order check before planning: AMBIGUOUS (Design Document, Chapter 8 and OD13, proposal).
+"""Order check before planning: AMBIGUOUS (Design Document, Chapter 8 and DD25).
 
 The ambiguity check runs once, on the order text, before the planner is called, so
 the closed loop never asks the same question twice. It stays fixed code outside the
@@ -6,9 +6,11 @@ model (DD7).
 
 A mention of a part is a noun with the colour and size words just before it, as in
 "the red brick" or "the big red one". The capability file lists the nouns and the
-words of every part under "vocabulary" (OD13). A part matches a mention when it has
+words of every part under "vocabulary" (DD25). A part matches a mention when it has
 all the words of the mention. The check looks at the parts in the cell, and at the
-slot the order names right after the mention, as in "the red brick in slot 1".
+slot where the order says the part is now, as in "the red brick from slot 1" or
+"replace the red brick in slot 1 with ..." (proposal). In "put a spacer in slot 1"
+the slot is where the part goes, so it settles nothing.
 
 - One matching part: the mention is clear.
 - More than one: the order is ambiguous, unless "any" or "either" stands before the
@@ -20,7 +22,7 @@ slot the order names right after the mention, as in "the red brick in slot 1".
 
 The orchestrator asks the operator once for every unclear mention. An answer that
 narrows the mention to exactly one part settles it. If it does not, the run stops
-(OD13). A capability file without a vocabulary, such as the Chapter 6 example, gets
+(DD25). A capability file without a vocabulary, such as the Chapter 6 example, gets
 its words from the part IDs: SPACER_SHORT is a "spacer" that is "short". "One" is a
 noun only after a describing word, so "put one red brick" is not read as two parts.
 """
@@ -28,8 +30,13 @@ noun only after a describing word, so "put one red brick" is not read as two par
 import re
 from dataclasses import dataclass
 
-# Words that let several matching parts be fine.
+# Words that let several matching parts be fine (DD25).
 ANY_WORDS = {"any", "either"}
+
+# When a slot named after a mention says where the part is now, not where it goes (proposal).
+LOCATION_WORDS = {"in", "on", "at"}
+DESTINATION_WORDS = {"to", "into", "onto", "with"}
+TAKE_AWAY_VERBS = {"replace", "remove", "take", "swap"}
 
 # Words that may stand before a part description without describing it (proposal). Any other word there is
 # read as a describing word the vocabulary does not know.
@@ -118,13 +125,27 @@ def _parts_in_cell(state):
     return present
 
 
-def _named_slot(tokens, start, capability):
-    """The slot named within a few words after a mention, as in "in slot 2", else None."""
+def _source_slot(tokens, mention, capability):
+    """The slot the order names as where the mentioned part is now, else None (proposal).
+
+    A slot right after the mention says where the part is only after "from" ("the spacer from slot 1"), or
+    after "in", "on" or "at" when the sentence also names where the part goes ("to", "into", "onto", "with")
+    or starts with a verb that takes a part away ("replace", "remove", "take", "swap"). Otherwise, as in
+    "put a spacer in slot 1", the slot is where the part should go and settles nothing.
+    """
     slots = {name.lower(): name for name in capability["positions"]["slots"]}
+    start = mention.index + 1
     window = tokens[start:start + 5]
     for index, token in enumerate(window):
         if token == "slot" and index + 1 < len(window) and f"slot_{window[index + 1]}" in slots:
-            return slots[f"slot_{window[index + 1]}"]
+            before = window[index - 1] if index > 0 else None
+            after = set(tokens[start + index + 2:])
+            if before == "from":
+                return slots[f"slot_{window[index + 1]}"]
+            if before in LOCATION_WORDS and (after & DESTINATION_WORDS
+                                             or set(tokens[:mention.index]) & TAKE_AWAY_VERBS):
+                return slots[f"slot_{window[index + 1]}"]
+            return None
     return None
 
 
@@ -155,10 +176,12 @@ def find_ambiguity(text, state, capability, answers=None):
     answers = answers or {}
     nouns, describing = vocabulary(capability)
     present = _parts_in_cell(state) & set(capability["parts"])
-    found, tokens = mentions(text, capability)
-    for number, mention in enumerate(found):
+    # Each sentence is read on its own, so a destination in one sentence does not change another.
+    sentences = [mentions(sentence, capability) for sentence in re.split(r"[.!?\n]+", text)]
+    found = [(mention, tokens) for sentence, tokens in sentences for mention in sentence]
+    for number, (mention, tokens) in enumerate(found):
         candidates = _matches(mention, present, nouns, describing)
-        slot = _named_slot(tokens, mention.index + 1, capability)
+        slot = _source_slot(tokens, mention, capability)
         if slot is not None:
             in_slot = [part for part in candidates if part in state["slots"][slot]]
             if len(in_slot) == 1:

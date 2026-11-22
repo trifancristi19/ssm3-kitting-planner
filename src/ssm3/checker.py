@@ -14,7 +14,7 @@ and the functions can never disagree. Several valid orders of placement are all
 accepted: a part on top before its base gets NO_BASE, and a pick of a covered base
 gets PART_COVERED (DD19). The codes are a proposal (Chapter 8).
 
-Next to the plan, the checker gets the target tray (OD13, proposal): the full tray
+Next to the plan, the checker gets the target tray (DD25): the full tray
 the order asks for, from the structured order or, for a plain-language order, the
 tray the planner says it intends. The checker never gets the expected tray of the
 task set. With the target it runs three more checks:
@@ -26,12 +26,12 @@ task set. With the target it runs three more checks:
   slot than it has levels, an unknown part, or a change to a protected slot) means
   the order asked for something the rules forbid. The orchestrator tells the
   operator. A plan that breaks a rule while its target does not keeps its usual code.
-- TARGET_MISMATCH (OD14). The plan is the full remaining plan: after the replay
+- TARGET_MISMATCH (DD26). The plan is the full remaining plan: after the replay
   the gripper must be empty and the final tray must equal the target. The reason
   names what differs. An empty plan therefore passes only when the tray is complete.
 
 The ambiguity check (AMBIGUOUS) runs once on the order text before planning, in
-order_check.py, so the closed loop does not ask the same question again (OD13). The
+order_check.py, so the closed loop does not ask the same question again (DD25). The
 number of rejected plans before the operator is asked belongs to the orchestrator
 (DD13). The order of the checks is the format, the target, the steps of Table 9 and
 then the end of the plan (proposal).
@@ -77,7 +77,7 @@ def _argument_problem(name, args, capability, cell):
     return None
 
 
-# Target tray (OD13, OD14)
+# Target tray (DD25, DD26)
 
 def tray_shape_problem(target, capability):
     """The reason when target is not a full tray of this cell, else None (FORMAT)."""
@@ -123,7 +123,7 @@ def check(plan, state, capability, protected=(), target=None, fixed_target=None)
 
     plan is the list under "plan" in the planner response (Chapter 6). protected
     lists the slots the order keeps unchanged. target is the full tray the order asks
-    for (OD13), and fixed_target the target this run already holds (TARGET_CHANGED).
+    for (DD25), and fixed_target the target this run already holds (TARGET_CHANGED).
     Without a target only the steps are checked, as for a test of the steps alone.
     Returns the check result of Table 7 as a dict with verdict, step (counted from 1),
     code and reason. The state that is passed in never changes.
