@@ -76,6 +76,7 @@ def test_without_a_vocabulary_the_words_come_from_the_part_id(capability):
     "Put a yellow block on top of slot 1.",
     "Place the long brick in slot 3.",
     "Put one red brick in slot 4.",
+    "Move the red bricks to the return position.",
 ])
 def test_a_description_that_fits_two_parts_asks(bricks, text):
     number, reason = unclear(text, bricks)
@@ -92,7 +93,7 @@ def test_a_description_that_fits_two_parts_asks(bricks, text):
     "Put BRICK_2X2_RED in slot 4.",
     "Put any red brick in slot 4.",
     "Put either yellow brick on slot 2.",
-    "Move the red bricks to the return position.",
+    "Move the 2x4 red bricks to the return position.",
     "Empty slot 1.",
     "Move the part in slot 1 to the return position.",
 ])

@@ -12,7 +12,8 @@ slot the order names right after the mention, as in "the red brick in slot 1".
 
 - One matching part: the mention is clear.
 - More than one: the order is ambiguous, unless "any" or "either" stands before the
-  mention, or the noun is plural ("the red bricks"), which accept several parts.
+  mention (DD25). A plural ("the red bricks") is a mention too, and it also asks
+  when it fits more than one kind of part.
 - No matching part, or a word right before the mention that the vocabulary does
   not know ("the green brick"): the check also asks, so it never guesses.
 - An order that names a part only by its ID or its slot, or names no part, passes.
@@ -100,7 +101,8 @@ def mentions(text, capability):
         if noun == "one" and not said:
             continue  # "one" alone is a number, not a part
         before = tokens[back] if back >= 0 else None
-        several = plural or before in ANY_WORDS
+        # Only "any" or "either" makes several matching parts acceptable, not a plural (DD25).
+        several = before in ANY_WORDS
         unknown = before if before and before not in FILLER_WORDS and not before.isdigit() else None
         found.append(Mention(index, " ".join([*said, token]), frozenset(said), noun, several, unknown))
     return found, tokens
