@@ -1,7 +1,8 @@
-"""Tests for OD13 and OD14: the checker gets the order and the target tray (Design Document, Table 14).
+"""Tests for OD13 and OD14 (Design Document, Table 14, and the team's answers of 22 November 2026).
 
-AMBIGUOUS, RULE_OVERRIDE and TARGET_MISMATCH, on their own and inside the orchestrator loop.
-The brick tests use the six bricks of OD11 (config/capability_kitting.json).
+The order check before planning (AMBIGUOUS), and in the checker RULE_OVERRIDE, TARGET_CHANGED and
+TARGET_MISMATCH, on their own and inside the orchestrator loop. The brick tests use the six bricks
+of OD11 and their vocabulary (config/capability_kitting.json).
 """
 
 import json
@@ -12,10 +13,11 @@ from target_helper import CHAPTER_13_START, CHAPTER_13_TARGET, add_target
 
 from ssm3.capability import load_capability
 from ssm3.cell import SimulatedCell, empty_state
-from ssm3.checker import ambiguity, check, part_words
+from ssm3.checker import check
 from ssm3.console import ScriptedOperator
 from ssm3.logger import RunLog
 from ssm3.orchestrator import run_order
+from ssm3.order_check import find_ambiguity, vocabulary
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -46,83 +48,98 @@ def red_2x2_to_slot_4():
             step("move_to", position="SLOT_4"), step("place", part="BRICK_2X2_RED", slot="SLOT_4", level="base")]
 
 
-# Part words
+def unclear(text, bricks, answers=()):
+    capability, state = bricks
+    return find_ambiguity(text, state, capability, {0: list(answers)})
 
-def test_part_words_come_from_the_part_id(bricks):
+
+# Vocabulary
+
+def test_the_vocabulary_comes_from_the_capability_file(bricks):
     capability, _ = bricks
-    assert part_words(capability, "BRICK_2X4_RED") == ("brick", {"2x4", "red"})
-    assert part_words({"parts": {}}, "SPACER_SHORT") == ("spacer", {"short"})
+    nouns, describing = vocabulary(capability)
+    assert nouns["BRICK_2X4_RED"] == {"brick", "block", "piece", "one"}
+    assert {"red", "2x4", "big", "long", "larger"} <= describing["BRICK_2X4_RED"]
+    assert {"2x2", "small", "little", "shorter"} <= describing["BRICK_2X2_BLUE"]
 
 
-def test_the_capability_file_can_give_other_words():
-    capability = {"parts": {"BOLT": "BIN_1"}, "part_words": {"BOLT": ["bolt", "steel"]}}
-    assert part_words(capability, "BOLT") == ("bolt", {"steel"})
+def test_without_a_vocabulary_the_words_come_from_the_part_id(capability):
+    nouns, describing = vocabulary(capability)
+    assert (nouns["SPACER_SHORT"], describing["SPACER_SHORT"]) == ({"spacer"}, {"short"})
+    assert (nouns["BOLT"], describing["BOLT"]) == ({"bolt"}, set())
 
 
-# AMBIGUOUS
+# The order check before planning (AMBIGUOUS)
 
 @pytest.mark.parametrize("text", [
     "Put the red brick in slot 4.",
-    "Put a yellow brick on top of slot 1.",
-    "Place the blue brick in SLOT_3.",
+    "Put a yellow block on top of slot 1.",
+    "Place the long brick in slot 3.",
+    "Put one red brick in slot 4.",
 ])
-def test_a_description_that_fits_two_parts_is_ambiguous(bricks, text):
-    capability, state = bricks
-    reason = ambiguity(text, state, capability)
-    assert reason and "Which one is meant?" in reason
+def test_a_description_that_fits_two_parts_asks(bricks, text):
+    number, reason = unclear(text, bricks)
+    assert number == 0 and "fits" in reason and reason.endswith("Which part is meant?")
 
 
 @pytest.mark.parametrize("text", [
     "Put the 2x4 red brick in slot 4.",
-    "Put the red 2 x 4 brick in slot 4.",
+    "Put the red 2 by 4 brick in slot 4.",
     "Put the red 2×2 brick in slot 4.",
+    "Put the big red one in slot 4.",
+    "Put the small yellow piece in slot 2.",
     "Replace the red brick in slot 1 with a blue 2x4 brick.",
     "Put BRICK_2X2_RED in slot 4.",
-    "Move all bricks to the return position.",
-    "Put the green brick in slot 4.",
+    "Put any red brick in slot 4.",
+    "Put either yellow brick on slot 2.",
+    "Move the red bricks to the return position.",
+    "Empty slot 1.",
+    "Move the part in slot 1 to the return position.",
 ])
-def test_a_description_that_fits_one_part_or_none_is_not_ambiguous(bricks, text):
-    capability, state = bricks
-    assert ambiguity(text, state, capability) is None
+def test_a_clear_order_passes(bricks, text):
+    assert unclear(text, bricks) is None
 
 
-def test_only_parts_in_the_cell_count(bricks):
+def test_an_unknown_word_asks(bricks):
+    number, reason = unclear("Put the green brick in slot 4.", bricks)
+    assert 'The word "green"' in reason
+
+
+def test_a_mention_without_a_matching_part_asks(bricks):
     capability, state = bricks
-    state["bins"]["BIN_1"] = []  # no 2x2 red brick anywhere
-    state["slots"]["SLOT_1"] = []
-    state["bins"]["BIN_2"] = ["BRICK_2X4_RED"]
-    assert ambiguity("Put the red brick in slot 4.", state, capability) is None
+    state["bins"]["BIN_3"], state["bins"]["BIN_4"] = [], []  # no blue brick anywhere
+    number, reason = find_ambiguity("Put the blue brick in slot 4.", state, capability)
+    assert reason.startswith('No part in the cell fits "blue brick".')
+
+
+def test_each_unclear_mention_has_its_own_number(bricks):
+    text = "Put the 2x4 blue brick in slot 2 and the yellow brick in slot 3."
+    number, reason = unclear(text, bricks)
+    assert number == 1 and '"yellow brick"' in reason
 
 
 @pytest.mark.parametrize("answer, settled", [
     ("the 2x4 one", True),
     ("BRICK_2X2_RED", True),
     ("the small 2 x 2", True),
+    ("the bigger one", True),
     ("no further information", False),
     ("the red one", False),
 ])
 def test_an_operator_answer_can_settle_it(bricks, answer, settled):
-    capability, state = bricks
-    text = f"Put the red brick in slot 4.\nOperator answer: {answer}"
-    assert (ambiguity(text, state, capability) is None) == settled
+    assert (unclear("Put the red brick in slot 4.", bricks, [answer]) is None) == settled
 
 
-def test_the_checker_asks_before_it_looks_at_the_plan(bricks):
-    capability, state = bricks
-    result = check(red_2x2_to_slot_4(), state, capability, order_text="Put the red brick in slot 4.",
-                   target=tray(state, SLOT_4=["BRICK_2X2_RED"]))
-    assert (result["verdict"], result["code"]) == ("ask", "AMBIGUOUS")
-    assert "BRICK_2X2_RED, BRICK_2X4_RED" in result["reason"]
+def test_an_answer_about_one_part_does_not_settle_another(bricks):
+    text = "Put the red brick in slot 3 and the yellow brick in slot 4."
+    assert unclear(text, bricks, ["2x2"])[0] == 1
 
 
-def test_the_chapter_13_order_is_not_ambiguous(cell, chapter6_plan):
-    text = ("Replace the short spacer in slot 2 with a long spacer. Put the short spacer in the return position. "
-            "Leave slots 1 and 3 unchanged.")
-    result = check(chapter6_plan, cell.state(), cell.capability, ("SLOT_1", "SLOT_3"), text, CHAPTER_13_TARGET)
-    assert result["verdict"] == "run"
+def test_an_answer_can_also_settle_an_unknown_word(bricks):
+    assert unclear("Put the green brick in slot 4.", bricks, ["I meant the 2x4 yellow one"]) is None
 
 
-# RULE_OVERRIDE
+# The checker: RULE_OVERRIDE, TARGET_CHANGED and TARGET_MISMATCH
 
 @pytest.mark.parametrize("change, words", [
     ({"SLOT_4": ["BRICK_2X4_RED", "BRICK_2X2_RED", "BRICK_2X2_BLUE"]}, "3 parts in SLOT_4"),
@@ -154,8 +171,6 @@ def test_a_target_of_the_wrong_shape_is_a_format_error(bricks, target):
     assert check([], state, capability, target=target)["code"] == "FORMAT"
 
 
-# TARGET_MISMATCH (OD14)
-
 def test_a_plan_that_ends_at_its_target_runs(bricks):
     capability, state = bricks
     result = check(red_2x2_to_slot_4(), state, capability, target=tray(state, SLOT_4=["BRICK_2X2_RED"]))
@@ -170,15 +185,33 @@ def test_legal_steps_that_end_at_the_wrong_tray_are_a_target_mismatch(bricks):
     assert "SLOT_4 holds ['BRICK_2X2_RED'] but the target is empty" in result["reason"]
 
 
+def test_a_plan_must_end_with_an_empty_gripper(bricks):
+    # The planner always sends the full remaining plan (OD14): a plan that stops after a pick is not complete.
+    capability, state = bricks
+    half = red_2x2_to_slot_4()[:2]
+    result = check(half, state, capability, target=tray(state))
+    assert result["code"] == "TARGET_MISMATCH" and "the gripper still holds BRICK_2X2_RED" in result["reason"]
+
+
 def test_an_empty_plan_passes_only_when_the_tray_already_matches(bricks):
     capability, state = bricks
     assert check([], state, capability, target=tray(state))["verdict"] == "run"
     assert check([], state, capability, target=tray(state, SLOT_4=["BRICK_2X2_RED"]))["code"] == "TARGET_MISMATCH"
 
 
-def test_without_order_text_and_target_only_the_steps_are_checked(bricks):
+def test_a_changed_target_is_rejected(bricks):
     capability, state = bricks
-    assert check(red_2x2_to_slot_4(), state, capability)["verdict"] == "run"
+    fixed = tray(state, SLOT_4=["BRICK_2X2_RED"])
+    result = check(red_2x2_to_slot_4(), state, capability, target=tray(state, SLOT_4=["BRICK_2X2_BLUE"]),
+                   fixed_target=fixed)
+    assert (result["code"], result["reason"]) == ("TARGET_CHANGED", "The target of this order is fixed, but this "
+                                                                     "plan changes it for SLOT_4")
+    assert check(red_2x2_to_slot_4(), state, capability, target=fixed, fixed_target=fixed)["verdict"] == "run"
+
+
+def test_without_a_target_only_the_steps_are_checked(bricks):
+    capability, state = bricks
+    assert check(red_2x2_to_slot_4()[:2], state, capability)["verdict"] == "run"
 
 
 # Inside the orchestrator loop
@@ -190,7 +223,9 @@ class Planner:
 
     def __call__(self, order, state, capability, history):
         self.histories.append(history)
-        return add_target(self.answers.pop(0), state, capability)
+        answer = self.answers.pop(0)
+        answer = answer(history) if callable(answer) else answer
+        return add_target(answer, state, capability)
 
 
 def plan(steps, target=None):
@@ -205,25 +240,42 @@ def run(capability, state, text, planner, operator=None, variant="open loop", **
     return summary, log, operator
 
 
-def test_an_ambiguous_order_asks_the_operator_and_the_answer_settles_it(bricks):
+def test_an_unclear_order_is_asked_before_planning_and_the_answer_settles_it(bricks):
     capability, state = bricks
-    planner = Planner(plan(red_2x2_to_slot_4()), plan(red_2x2_to_slot_4()))
-    operator = ScriptedOperator(["the 2x2 one"])
-    summary, log, _ = run(capability, state, "Put the red brick in slot 4.", planner, operator)
+    planner = Planner(plan(red_2x2_to_slot_4()))
+    summary, log, _ = run(capability, state, "Put the red brick in slot 4.", planner, ScriptedOperator(["2x2"]))
     assert summary["outcome"] == "done"
-    assert [record["code"] for record in log.of_kind("check_result")] == ["AMBIGUOUS", None]
+    order_check = log.of_kind("check_result")[0]
+    assert (order_check["stage"], order_check["code"], order_check["verdict"]) == ("order", "AMBIGUOUS", "ask")
     [intervention] = log.of_kind("intervention")
-    assert (intervention["kind"], intervention["source"], intervention["answer"]) == ("clarification", "checker",
-                                                                                       "the 2x2 one")
+    assert (intervention["kind"], intervention["source"], intervention["answer"]) == ("clarification",
+                                                                                       "order check", "2x2")
+    # The planner is called only after the answer, and gets it in its history.
+    assert planner.histories[0][0]["answer"] == "2x2"
     assert summary["final_state"]["slots"]["SLOT_4"] == ["BRICK_2X2_RED"]
 
 
-def test_a_planner_question_also_settles_the_ambiguity(bricks):
+def test_an_answer_that_does_not_settle_it_stops_the_run_before_planning(bricks):
     capability, state = bricks
-    planner = Planner('{"ask": "The 2x2 or the 2x4 red brick?"}', plan(red_2x2_to_slot_4()))
-    summary, log, _ = run(capability, state, "Put the red brick in slot 4.", planner, ScriptedOperator(["2x2"]))
-    assert summary["outcome"] == "done"
-    assert summary["interventions"] == 1
+    planner = Planner()
+    summary, log, operator = run(capability, state, "Put the red brick in slot 4.", planner,
+                                 ScriptedOperator(["the red one"]))
+    assert summary["outcome"] == "stopped" and "did not settle the order" in summary["reason"]
+    assert (summary["planner_calls"], summary["interventions"]) == (0, 1)
+    assert operator.questions == [log.of_kind("intervention")[0]["question"]]
+
+
+def test_two_unclear_mentions_are_asked_one_after_the_other(bricks):
+    capability, state = bricks
+    text = "Put the red brick in slot 3 and the yellow brick in slot 4."
+    steps = red_2x2_to_slot_4()[:2] + [step("move_to", position="SLOT_3"),
+                                       step("place", part="BRICK_2X2_RED", slot="SLOT_3", level="base"),
+                                       step("move_to", position="BIN_6"),
+                                       step("pick", part="BRICK_2X4_YELLOW", source="BIN_6"),
+                                       step("move_to", position="SLOT_4"),
+                                       step("place", part="BRICK_2X4_YELLOW", slot="SLOT_4", level="base")]
+    summary, log, _ = run(capability, state, text, Planner(plan(steps)), ScriptedOperator(["2x2", "the big one"]))
+    assert summary["outcome"] == "done" and summary["interventions"] == 2
 
 
 def test_a_rule_override_is_rejected_and_the_operator_is_told(bricks):
@@ -239,26 +291,51 @@ def test_a_rule_override_is_rejected_and_the_operator_is_told(bricks):
     assert summary["outcome"] == "refused" and summary["final_state"]["slots"]["SLOT_1"] == ["BRICK_2X4_RED"]
 
 
+CHAPTER_13_TEXT = ("Replace the short spacer in slot 2 with a long spacer. Put the short spacer in the return "
+                   "position. Leave slots 1 and 3 unchanged.")
+
+
+def remaining(chapter6_plan, target):
+    def answer(history):
+        done = sum(1 for event in history if event["type"] == "step" and event["status"] == "success")
+        return plan(chapter6_plan[done:], target)
+
+    return answer
+
+
 def test_the_closed_loop_cannot_end_early_on_an_empty_plan(cell, chapter6_plan):
     # OD14: an empty plan before the tray is complete is a TARGET_MISMATCH, so the planner has to go on.
-    def remaining(history):
-        done = sum(1 for event in history if event["type"] == "step" and event["status"] == "success")
-        return plan(chapter6_plan[done:], CHAPTER_13_TARGET)
-
-    # First a one-step plan, then an empty plan although slot 2 still holds the short spacer, then the rest.
-    first_two = [plan(chapter6_plan[:1], CHAPTER_13_TARGET), plan([], CHAPTER_13_TARGET)]
-
-    def scripted(order, state, capability, history):
-        return first_two.pop(0) if first_two else remaining(history)
-
-    text = ("Replace the short spacer in slot 2 with a long spacer. Put the short spacer in the return position. "
-            "Leave slots 1 and 3 unchanged.")
-    summary, log, _ = run(cell.capability, cell.state(), text, scripted, variant="closed loop",
+    planner = Planner(plan(chapter6_plan, CHAPTER_13_TARGET), plan([], CHAPTER_13_TARGET),
+                      *[remaining(chapter6_plan, CHAPTER_13_TARGET)] * 9)
+    summary, log, _ = run(cell.capability, cell.state(), CHAPTER_13_TEXT, planner, variant="closed loop",
                           protected=("SLOT_1", "SLOT_3"), expected_plan=chapter6_plan)
-    codes = [record["code"] for record in log.of_kind("check_result")]
-    assert codes[1] == "TARGET_MISMATCH"
+    assert [record["code"] for record in log.of_kind("check_result")][:2] == [None, "TARGET_MISMATCH"]
     assert summary["outcome"] == "done"
     assert summary["final_state"]["slots"]["SLOT_2"] == ["SPACER_LONG"]
+
+
+def test_the_target_is_fixed_once_a_plan_has_run(cell, chapter6_plan):
+    # After the first step the planner changes its mind about the tray: TARGET_CHANGED, the run does not follow.
+    other = dict(CHAPTER_13_TARGET, SLOT_4=["BOLT"])
+    goes_elsewhere = plan(chapter6_plan[1:] + [], other)
+    planner = Planner(plan(chapter6_plan, CHAPTER_13_TARGET), goes_elsewhere,
+                      *[remaining(chapter6_plan, CHAPTER_13_TARGET)] * 9)
+    summary, log, _ = run(cell.capability, cell.state(), CHAPTER_13_TEXT, planner, variant="closed loop",
+                          protected=("SLOT_1", "SLOT_3"), expected_plan=chapter6_plan)
+    assert [record["code"] for record in log.of_kind("check_result")][:2] == [None, "TARGET_CHANGED"]
+    assert summary["outcome"] == "done"
+
+
+def test_an_operator_answer_lets_the_target_change(cell, chapter6_plan):
+    # The planner asks during the run, and after the answer a new target is fine.
+    keep = dict(CHAPTER_13_START)
+    planner = Planner(plan(chapter6_plan, CHAPTER_13_TARGET), '{"ask": "Should slot 2 really change?"}',
+                      plan([step("move_to", position="HOME")], keep), plan([], keep))
+    summary, log, _ = run(cell.capability, cell.state(), CHAPTER_13_TEXT, planner, ScriptedOperator(["No, stop"]),
+                          variant="closed loop", protected=("SLOT_1", "SLOT_3"))
+    codes = [record["code"] for record in log.of_kind("check_result")]
+    assert "TARGET_CHANGED" not in codes
+    assert summary["final_state"]["slots"]["SLOT_2"] == ["SPACER_SHORT"]
 
 
 def test_a_structured_order_gives_the_target_and_the_log_keeps_it(cell, chapter6_plan):

@@ -6,7 +6,7 @@ The planner in these tests is a fake with fixed answers, so no test calls a lang
 import json
 
 import pytest
-from target_helper import add_target
+from target_helper import CHAPTER_13_TARGET, add_target
 
 from ssm3.cell import SimulatedCell
 from ssm3.console import NO_FURTHER_INFORMATION, ScriptedOperator
@@ -146,18 +146,17 @@ def test_closed_loop_calls_the_planner_after_every_step(cell, chapter6_plan):
     assert summary["final_state"]["slots"]["SLOT_2"] == ["SPACER_LONG"]
 
 
-def test_closed_loop_with_a_planner_that_sends_only_the_next_step(cell, chapter6_plan):
-    # Review of pull request 7: a one-step plan used to end the run after the first step.
+def test_closed_loop_rejects_a_planner_that_sends_only_the_next_step(cell, chapter6_plan):
+    # Since OD14 the planner sends the full remaining plan (team answer of 22 November 2026). A plan of only
+    # the next step does not end at the target, so it gets TARGET_MISMATCH and nothing moves.
     def next_step(history):
         done = sum(1 for event in history if event["type"] == "step" and event["status"] == "success")
-        return plan(chapter6_plan[done:done + 1])
+        return json.dumps({"plan": chapter6_plan[done:done + 1], "target": CHAPTER_13_TARGET})
 
-    planner = FakePlanner(*[next_step] * 10)
+    planner = FakePlanner(*[next_step] * 4)
     summary, log, _ = run(cell, "closed loop", planner, expected_plan=chapter6_plan)
-    assert summary["outcome"] == "done"
-    assert (summary["steps_run"], summary["planner_calls"]) == (9, 10)
-    assert summary["final_state"]["slots"]["SLOT_2"] == ["SPACER_LONG"]
-    assert summary["final_state"]["return"] == ["SPACER_SHORT"]
+    assert summary["outcome"] == "stopped" and summary["steps_run"] == 0
+    assert {record["code"] for record in log.of_kind("check_result")} == {"TARGET_MISMATCH"}
 
 
 def test_closed_loop_does_not_end_after_a_successful_step(cell, chapter6_plan):
@@ -215,10 +214,15 @@ def test_a_failure_the_cell_cannot_apply_stops_the_run_before_its_step(cell, cha
 
 def test_a_slip_of_a_part_without_a_bin_stops_the_run(capability, cell):
     # Review of pull request 10: a held part that the capability file does not list has no bin to fall into.
+    # The part is known, so the plan may place it, but the capability file gives it no bin (OD14: the plan ends
+    # with an empty gripper, so it places the part).
+    capability["parts"]["MYSTERY_PART"] = None
     state = cell.state()
     state["gripper"] = "MYSTERY_PART"
     odd = SimulatedCell(capability, state)
-    planner = FakePlanner(plan([{"function": "move_to", "args": {"position": "SLOT_4"}}]))
+    planner = FakePlanner(plan([{"function": "move_to", "args": {"position": "SLOT_4"}},
+                                {"function": "place", "args": {"part": "MYSTERY_PART", "slot": "SLOT_4",
+                                                               "level": "base"}}]))
     summary, log, _ = run(odd, "open loop", planner, faults=("drop_part",))
     assert summary["outcome"] == "stopped" and summary["steps_run"] == 0
     assert "could not be applied" in summary["reason"]

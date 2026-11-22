@@ -108,7 +108,8 @@ when you can do the order safely
 {"ask": "your question to the operator"}   when the order is unclear
 {"refuse": "short reason"}   when the order is impossible or not allowed
 With every plan, target is the tray you intend when the plan is done: every tray slot, each with its parts \
-from the base up, and [] for an empty slot."""
+from the base up, and [] for an empty slot. Always send the full remaining plan, so that it ends at the target \
+with an empty gripper. Keep the same target for the whole order: only an answer of the operator can change it."""
 
 
 class ResponseFormatError(ValueError):

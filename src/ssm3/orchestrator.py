@@ -14,22 +14,28 @@ The rules of the loop:
 - A rejected plan, or an answer the parser cannot read (FORMAT), goes back to the
   planner with its reason. After three rejected plans in a row the operator is
   asked once. If the next plan is still rejected, the run stops safely (DD13).
+- Before the planner is called, the order check (order_check.py) looks for an
+  unclear part in the order text (AMBIGUOUS, OD13). The operator is asked once for
+  every unclear mention. If the answer does not settle it, the run stops. A clear
+  order goes to the planner, which also gets every answer in its history.
 - A question of the planner, or an ask of the checker, goes to the operator, and
-  the planner is called again with the answer. Every answer is also added to the
-  order text the checker reads, so an answer can settle AMBIGUOUS (OD13).
-- The checker gets the order text and the target tray next to the plan (OD13): the
-  target of a structured order when the order has one, else the target the planner
-  gave with its plan. A plan whose final tray differs from the target is rejected
-  with TARGET_MISMATCH (OD14), so an empty plan ends the closed loop only when the
-  tray is complete. RULE_OVERRIDE is rejected like any other plan and the operator
-  is told (Table 9), and it counts as one of the rejections of DD13 (proposal).
+  the planner is called again with the answer.
+- The checker gets the target tray next to the plan (OD13): the target of a
+  structured order when the order has one, else the target the planner gave with
+  its plan. The plan must be the full remaining plan: it must end with an empty
+  gripper at the target, otherwise it is rejected with TARGET_MISMATCH (OD14), so an
+  empty plan ends the closed loop only when the tray is complete. The target is
+  fixed once a plan has run, and a later plan with another target gets
+  TARGET_CHANGED, until an operator's answer lets the target change. A changed
+  order is a new run on the current tray. RULE_OVERRIDE is rejected like any other
+  plan and the operator is told (Table 9). It counts as one of the rejections of
+  DD13 (proposal).
 - A refusal stops the run and the operator is told.
 - The open loop runs the whole checked plan and stops safely at a failed step
   (DD16). The closed loop runs the first step of every checked plan and then
   calls the planner again with the result and the new state (Table 8). It ends
   only when the planner answers with an empty plan, which the prompt asks for
-  when the order is complete (proposal). So a planner that sends only the next
-  step each time still finishes the whole order.
+  when the order is complete (proposal).
 - The step budget is twice the number of steps of the expected plan, or max_steps
   from the capability file for an order without an expected plan (DD14, DD21).
 - Failures can be injected before a given step (failures, FR11), or armed for the
@@ -52,7 +58,8 @@ Choices the Design Document does not settle are marked "proposal" below.
 import time
 
 from ssm3 import functions
-from ssm3.checker import ANSWER_PREFIX, check
+from ssm3.checker import check
+from ssm3.order_check import find_ambiguity
 
 # ProviderLimit lives next to the model client that raises it. It is imported here, so run_with_provider_repeats
 # catches exactly the class call_model raises (DD14), and callers can still import it from this module.
@@ -100,10 +107,10 @@ class _Run:
 
     def __init__(self, order, variant, planner, cell, operator, log, protected, budget, failures, faults):
         self.order = order
-        # The order text the checker reads, with the operator's answers added (OD13).
-        self.order_text = order["text"]
         # A structured order gives its own target tray. Else the planner gives one with every plan (OD13).
         self.order_target = order.get("target")
+        # The target of this run, fixed once a plan has run, until an operator's answer (TARGET_CHANGED, OD14).
+        self.fixed_target = self.order_target
         self.variant = variant
         self.planner = planner
         self.cell = cell
@@ -144,7 +151,23 @@ class _Run:
         self.log.event("intervention", kind=kind, source=source, question=question, answer=answer,
                        wait_seconds=round(time.perf_counter() - start, 3))
         self.history.append({"type": "answer", "question": question, "answer": answer})
-        self.order_text += f"\n{ANSWER_PREFIX} {answer}"
+        # Only an operator's answer may change the target of a plain-language order (OD14).
+        self.fixed_target = self.order_target
+        return answer
+
+    def check_order(self):
+        """The order check before planning (AMBIGUOUS, OD13). Returns a stopped summary, or None to go on."""
+        answers = {}
+        while True:
+            unclear = find_ambiguity(self.order["text"], self.cell.state(), self.cell.capability, answers)
+            if unclear is None:
+                return None
+            number, reason = unclear
+            self.log.event("check_result", verdict="ask", step=None, code="AMBIGUOUS", reason=reason,
+                           stage="order")
+            if number in answers:
+                return self.finish("stopped", f"the operator's answer did not settle the order: {reason}")
+            answers[number] = [self.ask_operator(reason, kind="clarification", source="order check")]
 
     def call_planner(self):
         self.planner_calls += 1
@@ -233,6 +256,9 @@ class _Run:
         return None
 
     def loop(self):
+        stopped = self.check_order()
+        if stopped:
+            return stopped
         while True:
             # A planner that keeps asking or keeps failing must also end: the number of planner
             # calls is limited by the step budget too (proposal).
@@ -256,7 +282,7 @@ class _Run:
             plan = answer["value"]
             target = self.order_target if self.order_target is not None else answer["target"]
             verdict = check(plan, self.cell.state(), self.cell.capability, self.protected,
-                            order_text=self.order_text, target=target)
+                            target=target, fixed_target=self.fixed_target)
             # The log keeps the target, so the paper can tell a wrong reading of the order from a wrong plan (OD14).
             self.log.event("check_result", **verdict, target=target)
             if verdict["code"] == "RULE_OVERRIDE":
@@ -272,6 +298,8 @@ class _Run:
                 continue
             self.rejects_in_a_row = 0
             self.waiting_for_a_valid_plan = False
+            # The target of the first plan that runs is fixed for the rest of the run (TARGET_CHANGED, OD14).
+            self.fixed_target = target
             if not plan:
                 return self.finish("done", "the planner returned an empty plan, so the order is complete")
             finished = self.run_steps(plan)

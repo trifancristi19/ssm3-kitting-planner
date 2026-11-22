@@ -13,5 +13,16 @@
     "BRICK_2X2_YELLOW": "BIN_5",
     "BRICK_2X4_YELLOW": "BIN_6"
   },
-  "limits": {"levels_per_slot": 2, "parts_in_gripper": 1, "return_capacity": 8, "max_steps": 40}
+  "limits": {"levels_per_slot": 2, "parts_in_gripper": 1, "return_capacity": 8, "max_steps": 40},
+  "vocabulary": {
+    "nouns": ["brick", "block", "piece", "one"],
+    "parts": {
+      "BRICK_2X2_RED": ["red", "2x2", "2 by 2", "small", "little", "short", "smaller", "shorter"],
+      "BRICK_2X2_BLUE": ["blue", "2x2", "2 by 2", "small", "little", "short", "smaller", "shorter"],
+      "BRICK_2X2_YELLOW": ["yellow", "2x2", "2 by 2", "small", "little", "short", "smaller", "shorter"],
+      "BRICK_2X4_RED": ["red", "2x4", "2 by 4", "big", "large", "long", "bigger", "larger", "longer"],
+      "BRICK_2X4_BLUE": ["blue", "2x4", "2 by 4", "big", "large", "long", "bigger", "larger", "longer"],
+      "BRICK_2X4_YELLOW": ["yellow", "2x4", "2 by 4", "big", "large", "long", "bigger", "larger", "longer"]
+    }
+  }
 }

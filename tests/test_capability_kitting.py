@@ -42,7 +42,8 @@ def run(cell, plan):
 
 
 def test_kitting_capability_file_loads_with_the_same_sections():
-    assert set(kitting()) == {"positions", "parts", "limits"}
+    # The vocabulary of the AMBIGUOUS check is the one extra section (OD13).
+    assert set(kitting()) == {"positions", "parts", "limits", "vocabulary"}
 
 
 def test_parts_are_two_sizes_in_three_colours():
