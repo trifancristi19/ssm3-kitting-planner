@@ -4,7 +4,7 @@ config/capability_kitting.json holds the proposal of OD11: two brick sizes, 2x2 
 2x4, in three colours, which gives six part types. Same-colour bricks of different
 sizes are near-identical on purpose, so the ambiguity check can be tested later
 (OD13). The tray, the levels and the limits stay as in Chapter 6, so only the
-part list and the bins change. The colours are a proposal until OD11 is decided.
+part list and the bins change. The whole part list is a proposal until OD11 is decided.
 """
 
 from pathlib import Path
@@ -113,7 +113,7 @@ def test_a_kit_change_swaps_one_brick_for_its_near_identical_twin():
     plan = plan_from_layout({"order_id": "K-2", "target": target, "protected": ["SLOT_1"]}, state, capability)["plan"]
     assert check(plan, state, capability, protected=("SLOT_1",))["verdict"] == "run"
     cell = SimulatedCell(capability, state)
-    run(cell, plan)
+    assert set(run(cell, plan)) == {"success"}
     assert cell.state()["slots"] == target
     assert cell.state()["return"] == ["BRICK_2X2_RED"]
 
