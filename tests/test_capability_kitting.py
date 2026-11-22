@@ -1,10 +1,10 @@
-"""Tests for the kitting capability file with the brick list (Design Document, OD11 proposal).
+"""Tests for the kitting capability file with the brick list (Design Document, DD24).
 
-config/capability_kitting.json holds the proposal of OD11: two brick sizes, 2x2 and
-2x4, in three colours, which gives six part types. Same-colour bricks of different
-sizes are near-identical on purpose, so the ambiguity check can be tested later
-(OD13). The tray, the levels and the limits stay as in Chapter 6, so only the
-part list and the bins change. The whole part list is a proposal until OD11 is decided.
+config/capability_kitting.json holds the parts of DD24, agreed by the team on 22
+November 2026: two brick sizes, 2x2 and 2x4, in three colours, which gives six part
+types. Same-colour bricks of different sizes are near-identical on purpose, so the
+ambiguity check can be tested (DD25). The tray, the levels and the limits stay as in
+Chapter 6, so only the part list and the bins change.
 """
 
 from pathlib import Path

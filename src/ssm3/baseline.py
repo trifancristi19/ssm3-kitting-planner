@@ -5,11 +5,11 @@ model, so the comparison isolates the planning step. It makes no model calls,
 and its plans pass the same checker (DD4). Chapter 11 gives two forms, a recipe
 table and a layout comparison script (proposal).
 
-The layout comparison works. The fields of the work order file are still open
-(OD7), so the structured order it reads is a proposal: an order ID, the full
-target tray with the parts of every slot from the base up (the same lists as the
-cell state) and the protected slots. The team chose the full tray, as OD7
-proposes. The recipe table waits for the list of kits (OD11).
+The layout comparison works. It reads the structured form of the work order file
+of DD23 (agreed by the team on 22 November 2026): an order ID, the full target
+tray with the parts of every slot from the base up (the same lists as the cell
+state) and the protected slots. The recipe table of the three kits of DD24 is not
+built yet.
 """
 
 from ssm3.cell import level_names
