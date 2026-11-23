@@ -2,6 +2,8 @@
 
 import json
 
+from target_helper import CHAPTER_13_TARGET
+
 from ssm3 import demo, planner
 from ssm3.logger import read_log
 
@@ -90,7 +92,7 @@ def test_live_closed_loop_shows_the_raw_answer_the_checker_and_the_steps(tmp_pat
 
     def fake_model(prompt, settings=None):
         prompts.append(prompt)
-        return json.dumps({"plan": chapter6_plan[len(prompts) - 1:]})
+        return json.dumps({"plan": chapter6_plan[len(prompts) - 1:], "target": CHAPTER_13_TARGET})
 
     monkeypatch.setattr(planner, "call_model", fake_model)
     [(summary, log)], screen = live(tmp_path)
@@ -106,7 +108,8 @@ def test_live_closed_loop_shows_the_raw_answer_the_checker_and_the_steps(tmp_pat
 
 def test_live_open_loop_makes_one_call(tmp_path, monkeypatch, chapter6_plan):
     with_key(monkeypatch, tmp_path)
-    monkeypatch.setattr(planner, "call_model", lambda prompt, settings=None: json.dumps({"plan": chapter6_plan}))
+    monkeypatch.setattr(planner, "call_model",
+                        lambda prompt, settings=None: json.dumps({"plan": chapter6_plan, "target": CHAPTER_13_TARGET}))
     [(summary, _)], _ = live(tmp_path, "--variant", "open")
     assert (summary["outcome"], summary["planner_calls"]) == ("done", 1)
 
@@ -147,7 +150,7 @@ def test_live_waits_when_groq_asks_for_a_short_pause(tmp_path, monkeypatch, chap
         calls["n"] += 1
         if calls["n"] == 1:
             raise planner.ProviderLimit("429", retry_after=5)
-        return json.dumps({"plan": chapter6_plan})
+        return json.dumps({"plan": chapter6_plan, "target": CHAPTER_13_TARGET})
 
     monkeypatch.setattr(planner, "call_model", once_limited)
     lines = []
@@ -173,7 +176,7 @@ def test_live_local_needs_no_key_and_logs_the_local_model(tmp_path, monkeypatch,
 
     def fake_model(prompt, settings=None):
         seen.append(settings)
-        return json.dumps({"plan": chapter6_plan})
+        return json.dumps({"plan": chapter6_plan, "target": CHAPTER_13_TARGET})
 
     monkeypatch.setattr(planner, "call_model", fake_model)
     [(summary, log)], screen = live(tmp_path, "--local", "--variant", "open")

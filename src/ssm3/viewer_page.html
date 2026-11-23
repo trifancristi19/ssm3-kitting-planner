@@ -480,7 +480,7 @@ The parts and the arm follow the cell state stored after every step.</footer>
         if (r.verdict === "run") return { cls: "run", tag: "Checker: RUN.", text: sentence(r.reason), detail: "Every step was replayed on a copy of the cell first, so nothing moves before this." };
         if (r.verdict === "reject") return { cls: "reject", tag: "Checker: REJECT" + (r.step ? " at step " + r.step : "") + ", " + r.code + ".",
           text: sentence(r.reason), detail: "Nothing moves. The reason goes back to the planner." };
-        return { cls: "ask", tag: "Checker: ASK.", text: sentence(r.reason), detail: "" };
+        return { cls: "ask", tag: (r.stage === "order" ? "Order check" : "Checker") + ": ASK.", text: sentence(r.reason), detail: "" };
       case "step_result": {
         const ok = r.status === "success";
         return { cls: ok ? "" : "failure", tag: "Step " + r.step + ":", text: stepText(r) + (ok ? "." : ", " + r.status + "."), detail: ok ? sentence(r.message) : sentence(r.message) };

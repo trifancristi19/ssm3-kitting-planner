@@ -17,9 +17,18 @@ ORDER = "Replace the short spacer in slot 2 with a long spacer. Leave slots 1 an
 
 # Response parser
 
-def test_a_plan_is_parsed(chapter6_plan):
-    answer = parse_response(json.dumps({"plan": chapter6_plan}))
-    assert answer == {"kind": "plan", "value": chapter6_plan}
+def test_a_plan_is_parsed_with_its_target(chapter6_plan):
+    target = {"SLOT_1": ["SPACER_BLUE"], "SLOT_2": ["SPACER_LONG"], "SLOT_3": ["BOLT"], "SLOT_4": []}
+    answer = parse_response(json.dumps({"plan": chapter6_plan, "target": target}))
+    assert answer == {"kind": "plan", "value": chapter6_plan, "target": target}
+
+
+@pytest.mark.parametrize("target", [None, [], {"SLOT_1": "BOLT"}, {"SLOT_1": [1]}, "SLOT_1"])
+def test_a_plan_without_a_proper_target_is_a_format_error(chapter6_plan, target):
+    # DD25: every plan states the tray the planner intends.
+    answer = {"plan": chapter6_plan} if target is None else {"plan": chapter6_plan, "target": target}
+    with pytest.raises(ResponseFormatError, match="target"):
+        parse_response(json.dumps(answer))
 
 
 @pytest.mark.parametrize("kind", ["ask", "refuse"])
@@ -60,7 +69,8 @@ def test_a_non_text_answer_is_a_format_error():
 
 
 def test_an_empty_plan_is_left_to_the_checker():
-    assert parse_response('{"plan": []}') == {"kind": "plan", "value": []}
+    assert parse_response('{"plan": [], "target": {"SLOT_1": []}}') == {"kind": "plan", "value": [],
+                                                                         "target": {"SLOT_1": []}}
 
 
 # Prompt builder
@@ -125,7 +135,8 @@ def test_history_is_only_shown_when_there_is_some(cell):
 
 def test_the_answer_format_says_how_to_end_an_order(cell):
     prompt = build_prompt(ORDER, cell.state(), cell.capability)
-    assert '{"plan": []}   when the order is complete and nothing is left to do' in prompt
+    assert '{"plan": [], "target": {...}}   when the order is complete and nothing is left to do' in prompt
+    assert "target is the tray you intend when the plan is done" in prompt
 
 
 def test_the_names_only_variant_hides_inputs_and_preconditions(cell):

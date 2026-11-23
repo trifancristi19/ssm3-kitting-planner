@@ -42,7 +42,8 @@ def run(cell, plan):
 
 
 def test_kitting_capability_file_loads_with_the_same_sections():
-    assert set(kitting()) == {"positions", "parts", "limits"}
+    # The vocabulary of the AMBIGUOUS check is the one extra section (DD25).
+    assert set(kitting()) == {"positions", "parts", "limits", "vocabulary"}
 
 
 def test_parts_are_two_sizes_in_three_colours():
@@ -59,7 +60,7 @@ def test_every_part_has_its_own_bin_and_every_bin_is_used():
 
 def test_every_colour_has_a_near_identical_pair():
     # Two bricks of the same colour differ only in size, so an order such as "the red brick" is
-    # ambiguous. This is what the ambiguity check must catch (Study 1, OD13).
+    # ambiguous. This is what the ambiguity check must catch (Study 1, DD25).
     parts = kitting()["parts"]
     for colour in COLOURS:
         assert [f"BRICK_{size}_{colour}" in parts for size in SIZES] == [True, True]

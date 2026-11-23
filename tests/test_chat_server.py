@@ -2,6 +2,8 @@
 
 import json
 
+from target_helper import CHAPTER_13_START, add_target
+
 from ssm3 import chat, chat_server
 
 PLAN = json.dumps({"plan": [{"function": "move_to", "args": {"position": "BIN_1"}},
@@ -12,7 +14,10 @@ PLAN = json.dumps({"plan": [{"function": "move_to", "args": {"position": "BIN_1"
 
 def session(tmp_path, *raw):
     remaining = list(raw)
-    return chat.ChatSession(planner=lambda *args: remaining.pop(0), log_dir=tmp_path, answer_seconds=1)
+    # Since DD25 a plan also gives the tray it intends: here the tray the plan builds, unless the answer gives one.
+    return chat.ChatSession(planner=lambda order, state, capability, history: add_target(remaining.pop(0), state,
+                                                                                         capability),
+                            log_dir=tmp_path, answer_seconds=1)
 
 
 def call(s, method, path, data=None, content_type="application/json", host="127.0.0.1:8765"):
@@ -92,7 +97,8 @@ def test_main_builds_a_session_with_the_options(monkeypatch):
 
 def test_an_order_carries_the_ticked_slots_to_the_checker(tmp_path):
     touches_slot_1 = json.dumps({"plan": [{"function": "move_to", "args": {"position": "SLOT_1"}},
-                                          {"function": "pick", "args": {"part": "SPACER_BLUE", "source": "SLOT_1"}}]})
+                                          {"function": "pick", "args": {"part": "SPACER_BLUE", "source": "SLOT_1"}}],
+                                 "target": CHAPTER_13_START})
     s = session(tmp_path, touches_slot_1, '{"refuse": "Slot 1 stays unchanged"}')
     assert call(s, "GET", "/api/events")[1]["default_protected"] == ["SLOT_1", "SLOT_3"]
     assert call(s, "POST", "/api/order", {"text": "Take the blue spacer", "protected": ["SLOT_1"]})[0] == 200

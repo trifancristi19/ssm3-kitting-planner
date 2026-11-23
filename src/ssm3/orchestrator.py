@@ -14,15 +14,28 @@ The rules of the loop:
 - A rejected plan, or an answer the parser cannot read (FORMAT), goes back to the
   planner with its reason. After three rejected plans in a row the operator is
   asked once. If the next plan is still rejected, the run stops safely (DD13).
+- Before the planner is called, the order check (order_check.py) looks for an
+  unclear part in the order text (AMBIGUOUS, DD25). The operator is asked once for
+  every unclear mention. If the answer does not settle it, the run stops. A clear
+  order goes to the planner, which also gets every answer in its history.
 - A question of the planner, or an ask of the checker, goes to the operator, and
   the planner is called again with the answer.
+- The checker gets the target tray next to the plan (DD25): the target of a
+  structured order when the order has one, else the target the planner gave with
+  its plan. The plan must be the full remaining plan: it must end with an empty
+  gripper at the target, otherwise it is rejected with TARGET_MISMATCH (DD26), so an
+  empty plan ends the closed loop only when the tray is complete. The target is
+  fixed once a plan has run, and a later plan with another target gets
+  TARGET_CHANGED, until an operator's answer lets the target change. A changed
+  order is a new run on the current tray. RULE_OVERRIDE is rejected like any other
+  plan and the operator is told (Table 9). It counts as one of the rejections of
+  DD13 (proposal).
 - A refusal stops the run and the operator is told.
 - The open loop runs the whole checked plan and stops safely at a failed step
   (DD16). The closed loop runs the first step of every checked plan and then
   calls the planner again with the result and the new state (Table 8). It ends
   only when the planner answers with an empty plan, which the prompt asks for
-  when the order is complete (proposal). So a planner that sends only the next
-  step each time still finishes the whole order.
+  when the order is complete (proposal).
 - The step budget is twice the number of steps of the expected plan, or max_steps
   from the capability file for an order without an expected plan (DD14, DD21).
 - Failures can be injected before a given step (failures, FR11), or armed for the
@@ -46,6 +59,7 @@ import time
 
 from ssm3 import functions
 from ssm3.checker import check
+from ssm3.order_check import find_ambiguity
 
 # ProviderLimit lives next to the model client that raises it. It is imported here, so run_with_provider_repeats
 # catches exactly the class call_model raises (DD14), and callers can still import it from this module.
@@ -93,6 +107,10 @@ class _Run:
 
     def __init__(self, order, variant, planner, cell, operator, log, protected, budget, failures, faults):
         self.order = order
+        # A structured order gives its own target tray. Else the planner gives one with every plan (DD25).
+        self.order_target = order.get("target")
+        # The target of this run, fixed once a plan has run, until an operator's answer (TARGET_CHANGED, DD26).
+        self.fixed_target = self.order_target
         self.variant = variant
         self.planner = planner
         self.cell = cell
@@ -133,6 +151,23 @@ class _Run:
         self.log.event("intervention", kind=kind, source=source, question=question, answer=answer,
                        wait_seconds=round(time.perf_counter() - start, 3))
         self.history.append({"type": "answer", "question": question, "answer": answer})
+        # Only an operator's answer may change the target of a plain-language order (DD26).
+        self.fixed_target = self.order_target
+        return answer
+
+    def check_order(self):
+        """The order check before planning (AMBIGUOUS, DD25). Returns a stopped summary, or None to go on."""
+        answers = {}
+        while True:
+            unclear = find_ambiguity(self.order["text"], self.cell.state(), self.cell.capability, answers)
+            if unclear is None:
+                return None
+            number, reason = unclear
+            self.log.event("check_result", verdict="ask", step=None, code="AMBIGUOUS", reason=reason,
+                           stage="order")
+            if number in answers:
+                return self.finish("stopped", f"the operator's answer did not settle the order: {reason}")
+            answers[number] = [self.ask_operator(reason, kind="clarification", source="order check")]
 
     def call_planner(self):
         self.planner_calls += 1
@@ -194,7 +229,7 @@ class _Run:
                 return None
         if self.variant == "open loop":
             return self.finish("done", "the last step of the plan is done")
-        # The closed loop always asks the planner again, and ends only on an empty plan (proposal, OD14).
+        # The closed loop always asks the planner again, and ends only on an empty plan (DD26).
         return None
 
     def inject(self, kind, details, before):
@@ -221,6 +256,9 @@ class _Run:
         return None
 
     def loop(self):
+        stopped = self.check_order()
+        if stopped:
+            return stopped
         while True:
             # A planner that keeps asking or keeps failing must also end: the number of planner
             # calls is limited by the step budget too (proposal).
@@ -242,8 +280,14 @@ class _Run:
             if answer["kind"] == "refuse":
                 return self.finish("refused", answer["value"])
             plan = answer["value"]
-            verdict = check(plan, self.cell.state(), self.cell.capability, self.protected)
-            self.log.event("check_result", **verdict)
+            target = self.order_target if self.order_target is not None else answer["target"]
+            verdict = check(plan, self.cell.state(), self.cell.capability, self.protected,
+                            target=target, fixed_target=self.fixed_target)
+            # The log keeps the target, so the paper can tell a wrong reading of the order from a wrong plan (DD26).
+            self.log.event("check_result", **verdict, target=target)
+            if verdict["code"] == "RULE_OVERRIDE":
+                self.operator.tell(f"Order {self.order.get('order_id')}: {verdict['reason']}. No order can change "
+                                   "a rule of the cell.")
             if verdict["verdict"] == "reject":
                 stopped = self.reject(verdict)
                 if stopped:
@@ -254,6 +298,8 @@ class _Run:
                 continue
             self.rejects_in_a_row = 0
             self.waiting_for_a_valid_plan = False
+            # The target of the first plan that runs is fixed for the rest of the run (TARGET_CHANGED, DD26).
+            self.fixed_target = target
             if not plan:
                 return self.finish("done", "the planner returned an empty plan, so the order is complete")
             finished = self.run_steps(plan)
@@ -265,7 +311,9 @@ def run_order(order, variant, *, planner, cell, operator, log, protected=(), exp
               faults=(), info=None):
     """Run one order from planning to the final tray and return its summary.
 
-    order is {"order_id": ..., "text": ...}. variant is "open loop" or "closed loop".
+    order is {"order_id": ..., "text": ...}, and a structured order may also give
+    "target", the full target tray (DD23, DD25). A plain-language order of the task set
+    never carries the expected tray. variant is "open loop" or "closed loop".
     planner returns the raw model answer (see the module docstring), cell is the
     simulated cell, operator a console operator and log a logger.RunLog. protected
     lists the slots the order keeps unchanged (from the task set). expected_plan

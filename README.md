@@ -6,7 +6,7 @@ The system plans order-based kitting with kit correction in a simulated tabletop
 
 ## Status
 
-Study 1, the model tests (353 runs), is finished. Its task set and checker are in `study1/` and are the first tested code in this repository. Study 2, the main experiment, is next. The simulated cell with two levels per tray slot, the four plan functions, the checker (every code of Table 9 except AMBIGUOUS and RULE_OVERRIDE), the layout comparison of the baseline and the run limits of the orchestrator now work, following Design Document 0.4. The prompt builder, the response parser, the orchestrator loop for both variants, the run logger and the scripted operator also work, tested with a fake planner, so no test calls a language model. The model client (`call_model`, Groq through its OpenAI-compatible endpoint) works and is tested only with fake HTTP answers. The evaluator and the recipe table are still documented stubs. Some design questions are still open until the client approves the Design Document at Gate A (18 November 2026), so the code does not fix them.
+Study 1, the model tests (353 runs), is finished. Its task set and checker are in `study1/` and are the first tested code in this repository. Study 2, the main experiment, is next. The simulated cell with two levels per tray slot, the four plan functions, the order check before planning (AMBIGUOUS, DD25), the checker (every code of Table 9, and since DD25 and DD26 also the target tray: RULE_OVERRIDE, TARGET_CHANGED and TARGET_MISMATCH), the layout comparison of the baseline and the run limits of the orchestrator now work, following Design Document 0.4. The prompt builder, the response parser, the orchestrator loop for both variants, the run logger and the scripted operator also work, tested with a fake planner, so no test calls a language model. The model client (`call_model`, Groq through its OpenAI-compatible endpoint) works and is tested only with fake HTTP answers. The evaluator and the recipe table are still documented stubs. Some design questions are still open until the client approves the Design Document at Gate A (18 November 2026), so the code does not fix them.
 
 ## Layout
 
@@ -16,6 +16,7 @@ config/capability_kitting.json   parts and bins of DD24: 2x2 and 2x4 bricks in t
 src/ssm3/                        the system, one module per component (Design Document Chapter 4)
   planner.py                     LLM planner, Task A (Chapter 7)
   checker.py                     checker, Task B (Chapter 8)
+  order_check.py                 order check before planning, AMBIGUOUS (DD25)
   baseline.py                    non-LLM baseline, Task C (Chapter 11)
   orchestrator.py                orchestrator loop (Chapter 9)
   console.py                     operator console (Chapter 9)
