@@ -88,7 +88,7 @@ main { grid-template-columns: minmax(0, 1fr) 400px; }
         </div>
         <div class="examples" id="examples"></div>
         <div class="row">
-          <textarea id="text" rows="2" placeholder="For example: put the bolt from BIN_1 in slot 4"></textarea>
+          <textarea id="text" rows="2" placeholder="For example: put the big blue brick from BIN_4 in slot 4"></textarea>
           <button id="send" class="primary">Send</button>
         </div>
         <div id="status"></div>
@@ -173,9 +173,16 @@ __CELL_VIEW__
   }
   chip("Checker", "outside the model");
   const legend = document.getElementById("legend");
-  for (const p of ["SPACER_SHORT", "SPACER_LONG", "SPACER_BLUE", "BOLT"]) {
-    const sw = el("i"); sw.style.background = partInfo(p).color;
-    legend.append(el("span", {}, sw, p));
+  // The legend shows one swatch per colour of the parts in the cell, so it follows the capability file.
+  const legendParts = [...new Set([...Object.values(first.state.bins).flat(), ...Object.values(first.state.slots).flat()])].sort();
+  const legendColours = new Map();
+  for (const p of legendParts) {
+    const name = p.startsWith("BRICK_") ? p.split("_").pop().toLowerCase() + " brick" : p;
+    if (!legendColours.has(name)) legendColours.set(name, partInfo(p).color);
+  }
+  for (const [name, colour] of legendColours) {
+    const sw = el("i"); sw.style.background = colour;
+    legend.append(el("span", {}, sw, name));
   }
   const keepSwatch = el("i"); keepSwatch.style.border = "2px dashed var(--protect)"; keepSwatch.style.background = "transparent";
   legend.append(el("span", {}, keepSwatch, "kept unchanged"));
@@ -363,7 +370,7 @@ __CELL_VIEW__
   loopClosed.addEventListener("click", () => setLoop("closed"));
   function refresh() {
     text.classList.toggle("answering", waitingForAnswer);
-    text.placeholder = waitingForAnswer ? "Type the answer to the question" : "For example: put the bolt from BIN_1 in slot 4";
+    text.placeholder = waitingForAnswer ? "Type the answer to the question" : "For example: put the big blue brick from BIN_4 in slot 4";
     send.textContent = waitingForAnswer ? "Answer" : "Send";
     send.disabled = busy && !waitingForAnswer;
     document.getElementById("reset").disabled = busy;
@@ -387,10 +394,10 @@ __CELL_VIEW__
   text.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } });
   document.getElementById("reset").addEventListener("click", async () => { const r = await api("/api/reset", {}); if (!r.ok) status.textContent = r.error; });
   const examples = [
-    "Put the bolt from BIN_1 in slot 4.",
-    "Replace the short spacer in slot 2 with a long spacer. Put the short spacer in the return position.",
-    "Put the blue spacer from slot 1 in the return position.",
-    "Move a spacer to slot 4.",
+    "Put the big blue brick from BIN_4 in slot 4.",
+    "Replace the small red brick in slot 2 with the big red brick. Put the small red brick in the return position.",
+    "Put the big blue brick from slot 1 in the return position.",
+    "Put a red brick in slot 4.",
   ];
   const exampleBox = document.getElementById("examples");
   for (const ex of examples) {

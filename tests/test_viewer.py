@@ -30,8 +30,8 @@ def test_scenario_1_starts_from_the_chapter_13_tray(tmp_path):
     [(_, log)] = demo.main(["--no-pause", "--scenario", "1", "--log-dir", str(tmp_path)], out=lambda line: None,
                            read=never_read)
     state = viewer.initial_state(read_log(log.path))
-    assert state["slots"]["SLOT_2"] == ["SPACER_SHORT"]
-    assert state["bins"]["BIN_3"] == ["SPACER_LONG"]
+    assert state["slots"]["SLOT_2"] == ["BRICK_2X2_RED"]
+    assert state["bins"]["BIN_2"] == ["BRICK_2X4_RED"] * 2
     assert (state["gripper"], state["arm"]) == (None, "HOME")
 
 

@@ -1,10 +1,12 @@
 """Terminal demo for the client meeting at Gate A (Design Document, Chapters 6, 9 and 13).
 
 The demo runs the worked example of Chapter 13 through the real cell, checker,
-orchestrator loop and run log. The five scenarios use a scripted planner, which
-reads the cell state and writes a plan from it, so they call no language model and
-no network. The loop, the checker and the feedback are the same code the language
-model uses.
+orchestrator loop and run log, with the bricks of DD24 in place of the spacers of
+the Chapter 13 text: the small red brick in slot 2 is replaced by its near-identical
+twin, the big red brick (proposal, until Chapter 13 itself moves to bricks). The
+five scenarios use a scripted planner, which reads the cell state and writes a plan
+from it, so they call no language model and no network. The loop, the checker and
+the feedback are the same code the language model uses.
 
 --live runs the same order once with the real model on Groq instead (DD17), in the
 closed loop. It uses the Groq free-tier limit, needs GROQ_API_KEY and is never run
@@ -50,16 +52,18 @@ from ssm3.logger import RunLog
 from ssm3.orchestrator import run_order
 
 ROOT = Path(__file__).resolve().parents[2]
-CAPABILITY_FILE = ROOT / "config" / "capability_example.json"
+CAPABILITY_FILE = ROOT / "config" / "capability_kitting.json"
 
 ORDER = {
     "order_id": "K-17",
-    "text": "Replace the short spacer in slot 2 with a long spacer. Put the short spacer in the return position. "
-            "Leave slots 1 and 3 unchanged.",
+    "text": "Replace the small red brick in slot 2 with the big red brick. Put the small red brick in the return "
+            "position. Leave slots 1 and 3 unchanged.",
 }
 PROTECTED = ("SLOT_1", "SLOT_3")
 SLOT = "SLOT_2"
-TARGET = ["SPACER_LONG"]
+TARGET = ["BRICK_2X4_RED"]
+# Every bin starts with this many bricks of its own type (proposal).
+BRICKS_PER_BIN = 2
 
 PLANNER_NOTE = "Planner: scripted (no language model in this run). Cell, checker, loop and run log: real code."
 WIDTH = 64
@@ -68,21 +72,19 @@ WIDTH = 64
 # The cell of Chapter 13
 
 def demo_capability():
-    """The Chapter 6 capability file, with a fourth bin for the blue spacer of Chapter 13."""
-    capability = copy.deepcopy(load_capability(CAPABILITY_FILE))
-    capability["positions"]["bins"].append("BIN_4")
-    capability["parts"]["SPACER_BLUE"] = "BIN_4"
-    return capability
+    """The capability file of DD24: six brick types, each in its own bin."""
+    return copy.deepcopy(load_capability(CAPABILITY_FILE))
 
 
 def chapter_13_state(capability, part_on_top=None):
-    """The Chapter 13 start: slot 1 a blue spacer, slot 2 a short spacer, slot 3 a bolt, the long spacer in BIN_3."""
+    """The Chapter 13 start with bricks: slot 1 a big blue brick, slot 2 a small red brick, slot 3 a big yellow
+    brick, slot 4 empty, and every bin stocked with bricks of its own type."""
     state = empty_state(capability)
-    state["slots"]["SLOT_1"] = ["SPACER_BLUE"]
-    state["slots"]["SLOT_2"] = ["SPACER_SHORT"]
-    state["slots"]["SLOT_3"] = ["BOLT"]
-    state["bins"]["BIN_1"] = ["BOLT"]
-    state["bins"]["BIN_3"] = ["SPACER_LONG"]
+    for part, source in capability["parts"].items():
+        state["bins"][source] = [part] * BRICKS_PER_BIN
+    state["slots"]["SLOT_1"] = ["BRICK_2X4_BLUE"]
+    state["slots"]["SLOT_2"] = ["BRICK_2X2_RED"]
+    state["slots"]["SLOT_3"] = ["BRICK_2X4_YELLOW"]
     if part_on_top:
         state["slots"]["SLOT_2"].append(part_on_top)
     return state
@@ -95,7 +97,7 @@ def _step(function, **args):
 
 
 def target_tray(state):
-    """The tray order K-17 asks for: slot 2 holds the long spacer, every other slot stays as it is (DD25)."""
+    """The tray order K-17 asks for: slot 2 holds the big red brick, every other slot stays as it is (DD25)."""
     tray = {slot: list(parts) for slot, parts in state["slots"].items()}
     tray[SLOT] = list(TARGET)
     return tray
@@ -105,7 +107,7 @@ def plan_from_state(state):
     """Write the remaining plan for order K-17 from the cell state, the way the planner should.
 
     The plan empties slot 2 from the top down into the return position, fetches the
-    long spacer from whichever bin holds it now, places it on the base and moves the
+    big red brick from whichever bin holds it now, places it on the base and moves the
     arm home. When the order is complete it is an empty plan, which ends the closed loop.
     """
     steps = []
@@ -308,17 +310,17 @@ def scenario_1(log_dir, out):
 
 def scenario_2(log_dir, out):
     out("Scenario 2: rejected plans, repaired, closed loop")
-    out("A bolt lies on top of the short spacer in slot 2 (Chapter 13, last variation).")
+    out("A small blue brick lies on top of the small red brick in slot 2 (Chapter 13, last variation).")
     capability = demo_capability()
-    state = chapter_13_state(capability, part_on_top="BOLT")
+    state = chapter_13_state(capability, part_on_top="BRICK_2X2_BLUE")
     out(tray_view(state, "Tray before:"))
     out("")
     # Both wrong plans still name the right target tray, so the checker rejects their steps (DD25).
     touches_slot_1 = {"plan": [_step("move_to", position="SLOT_1"),
-                               _step("pick", part="SPACER_BLUE", source="SLOT_1")], "target": target_tray(state)}
-    ignores_the_bolt = {"plan": [_step("move_to", position="SLOT_2"),
-                                 _step("pick", part="SPACER_SHORT", source="SLOT_2")], "target": target_tray(state)}
-    planner = scripted_planner(touches_slot_1, ignores_the_bolt)
+                               _step("pick", part="BRICK_2X4_BLUE", source="SLOT_1")], "target": target_tray(state)}
+    ignores_the_top = {"plan": [_step("move_to", position="SLOT_2"),
+                                _step("pick", part="BRICK_2X2_RED", source="SLOT_2")], "target": target_tray(state)}
+    planner = scripted_planner(touches_slot_1, ignores_the_top)
     summary, log = _run(log_dir, "2", "closed loop", planner, state, out)
     out("")
     out(tray_view(summary["final_state"], "Tray after:"))
@@ -327,10 +329,13 @@ def scenario_2(log_dir, out):
 
 def scenario_3(log_dir, out, pause):
     out("Scenario 3: a part is moved after planning")
-    out("Before step 6 someone moves the long spacer from BIN_3 to BIN_1.")
     capability = demo_capability()
-    move = {6: ("move_part", {"part": "SPACER_LONG", "source": "BIN_3", "destination": "BIN_1"})}
     expected = plan_from_state(chapter_13_state(capability))["plan"]
+    pick = _step_of(expected, "pick", "BRICK_2X4_RED")
+    out(f"Before steps {pick - 1} and {pick} someone moves both big red bricks from BIN_2 to BIN_1.")
+    # One failure goes off before each step, so the two bricks are moved before two steps.
+    brick = {"part": "BRICK_2X4_RED", "source": "BIN_2", "destination": "BIN_1"}
+    move = {pick - 1: ("move_part", dict(brick)), pick: ("move_part", dict(brick))}
     results = []
     for variant in ("open loop", "closed loop"):
         out("")
@@ -369,22 +374,22 @@ def _both_loops(log_dir, name, failures, out, pause):
 
 
 def scenario_4(log_dir, out, pause):
-    out("Scenario 4: the gripper gets no hold on the long spacer")
+    out("Scenario 4: the gripper gets no hold on the big red brick")
     expected = plan_from_state(chapter_13_state(demo_capability()))["plan"]
-    step = _step_of(expected, "pick", "SPACER_LONG")
+    step = _step_of(expected, "pick", "BRICK_2X4_RED")
     out(f"The checker allows the plan, but the pick of step {step} fails, as with a part of an awkward shape.")
     out("The open loop stops safely (DD16). The closed loop sends the failure to the planner, which tries again.")
     return _both_loops(log_dir, "4", {step: ("pick_failure", {})}, out, pause)
 
 
 def scenario_5(log_dir, out, pause):
-    out("Scenario 5: the long spacer slips out of the gripper after the lift")
+    out("Scenario 5: the big red brick slips out of the gripper after the lift")
     expected = plan_from_state(chapter_13_state(demo_capability()))["plan"]
-    step = _step_of(expected, "move_to", after=_step_of(expected, "pick", "SPACER_LONG"))
-    out(f"Before step {step}, the move to the tray, the spacer falls back into BIN_3, as a heavy part might.")
+    step = _step_of(expected, "move_to", after=_step_of(expected, "pick", "BRICK_2X4_RED"))
+    out(f"Before step {step}, the move to the tray, the brick falls back into BIN_2, as a heavy part might.")
     out("The open loop places with an empty gripper, which fails, and stops. The closed loop sees the empty")
-    out("gripper in the new state and fetches the spacer again.")
-    drop = {step: ("drop_part", {"part": "SPACER_LONG", "destination": "BIN_3"})}
+    out("gripper in the new state and fetches the brick again.")
+    drop = {step: ("drop_part", {"part": "BRICK_2X4_RED", "destination": "BIN_2"})}
     return _both_loops(log_dir, "5", drop, out, pause)
 
 
