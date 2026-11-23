@@ -246,12 +246,26 @@ function createCell3D(host, L) {
     render();
   }
 
-  // Parts: spacers are sleeves lying along the cell, the bolt stands with its hexagon head up.
+  // Parts: bricks are boxes with studs on top, spacers are sleeves lying along the cell, and the bolt stands with
+  // its hexagon head up.
   function partMesh(name) {
     const p = L.partInfo(name);
     const c = cssColour(p.color);
     const g = new THREE.Group();
-    if (p.bolt) {
+    if (p.studs) {
+      const plastic = solid(c, { roughness: 0.35, metalness: 0.05 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(p.w - 1, p.h, p.d - 1), plastic);
+      g.add(body);
+      // Two rows of studs: 2 by 2 on a 2x2 brick, 4 by 2 on a 2x4 brick.
+      const pitch = p.w / p.studs, rows = 2, rowPitch = p.d / rows;
+      for (let i = 0; i < p.studs; i++) {
+        for (let j = 0; j < rows; j++) {
+          const stud = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 4, 20), plastic);
+          stud.position.set(-p.w / 2 + pitch * (i + 0.5), p.h / 2 + 2, -p.d / 2 + rowPitch * (j + 0.5));
+          g.add(stud);
+        }
+      }
+    } else if (p.bolt) {
       const metal = solid(c, { metalness: 0.6, roughness: 0.35 });
       const head = new THREE.Mesh(new THREE.CylinderGeometry(p.w / 2, p.w / 2, 9, 6), metal);
       head.position.y = p.h / 2 - 4.5;

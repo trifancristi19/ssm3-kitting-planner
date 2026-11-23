@@ -2,7 +2,7 @@
 
 import json
 
-from target_helper import CHAPTER_13_START, add_target
+from target_helper import DEMO_START, add_target
 
 from ssm3 import chat, planner
 
@@ -22,9 +22,9 @@ def plan(*steps):
     return json.dumps({"plan": [{"function": f, "args": a} for f, a in steps]})
 
 
-BOLT_TO_SLOT_4 = plan(("move_to", {"position": "BIN_1"}), ("pick", {"part": "BOLT", "source": "BIN_1"}),
+BLUE_TO_SLOT_4 = plan(("move_to", {"position": "BIN_4"}), ("pick", {"part": "BRICK_2X4_BLUE", "source": "BIN_4"}),
                       ("move_to", {"position": "SLOT_4"}),
-                      ("place", {"part": "BOLT", "slot": "SLOT_4", "level": "base"}))
+                      ("place", {"part": "BRICK_2X4_BLUE", "slot": "SLOT_4", "level": "base"}))
 
 
 def kinds(session):
@@ -32,12 +32,12 @@ def kinds(session):
 
 
 def test_a_typed_order_runs_through_the_checker_and_the_cell(tmp_path):
-    session = chat.ChatSession(planner=answers(BOLT_TO_SLOT_4), log_dir=tmp_path)
-    summary = session.run("Put the bolt from BIN_1 in slot 4")
+    session = chat.ChatSession(planner=answers(BLUE_TO_SLOT_4), log_dir=tmp_path)
+    summary = session.run("Put the big blue brick from BIN_4 in slot 4")
     assert summary["outcome"] == "done"
-    assert session.state()["slots"]["SLOT_4"] == ["BOLT"]
+    assert session.state()["slots"]["SLOT_4"] == ["BRICK_2X4_BLUE"]
     events = session.events_since()
-    assert events[0] == {"event": "user", "order_id": "C-1", "text": "Put the bolt from BIN_1 in slot 4",
+    assert events[0] == {"event": "user", "order_id": "C-1", "text": "Put the big blue brick from BIN_4 in slot 4",
                          "variant": "open loop", "protected": [], "faults": [], "n": 0}
     assert [e["n"] for e in events] == list(range(len(events)))
     assert "check_result" in kinds(session) and kinds(session)[-1] == "run_end"
@@ -46,24 +46,24 @@ def test_a_typed_order_runs_through_the_checker_and_the_cell(tmp_path):
 
 def test_the_cell_keeps_its_state_for_the_next_order(tmp_path):
     # Parts go back through the return position, since the cell cannot place into a bin (BAD_POSITION).
-    back = plan(("pick", {"part": "BOLT", "source": "SLOT_4"}), ("move_to", {"position": "RETURN"}),
-                ("place", {"part": "BOLT", "slot": "RETURN"}))
-    session = chat.ChatSession(planner=answers(BOLT_TO_SLOT_4, back), log_dir=tmp_path)
-    session.run("Put the bolt from BIN_1 in slot 4")
+    back = plan(("pick", {"part": "BRICK_2X4_BLUE", "source": "SLOT_4"}), ("move_to", {"position": "RETURN"}),
+                ("place", {"part": "BRICK_2X4_BLUE", "slot": "RETURN"}))
+    session = chat.ChatSession(planner=answers(BLUE_TO_SLOT_4, back), log_dir=tmp_path)
+    session.run("Put the big blue brick from BIN_4 in slot 4")
     second = session.run("Now put it in the return position")
     assert second["outcome"] == "done"
-    assert session.state()["slots"]["SLOT_4"] == [] and session.state()["return"] == ["BOLT"]
+    assert session.state()["slots"]["SLOT_4"] == [] and session.state()["return"] == ["BRICK_2X4_BLUE"]
     start = [e for e in session.events_since() if e["event"] == "run_start"][1]
-    assert start["order_id"] == "C-2" and start["initial_state"]["slots"]["SLOT_4"] == ["BOLT"]
+    assert start["order_id"] == "C-2" and start["initial_state"]["slots"]["SLOT_4"] == ["BRICK_2X4_BLUE"]
 
 
 def test_a_rejected_plan_moves_nothing(tmp_path):
-    into_slot_1 = plan(("move_to", {"position": "BIN_1"}), ("pick", {"part": "BOLT", "source": "BIN_1"}),
+    into_slot_1 = plan(("move_to", {"position": "BIN_4"}), ("pick", {"part": "BRICK_2X4_BLUE", "source": "BIN_4"}),
                        ("move_to", {"position": "SLOT_1"}),
-                       ("place", {"part": "BOLT", "slot": "SLOT_1", "level": "base"}))
+                       ("place", {"part": "BRICK_2X4_BLUE", "slot": "SLOT_1", "level": "base"}))
     session = chat.ChatSession(planner=answers(into_slot_1, '{"refuse": "Slot 1 is full"}'), log_dir=tmp_path)
     before = session.state()
-    summary = session.run("Put the bolt in slot 1")
+    summary = session.run("Put the big blue brick in slot 1")
     assert summary["outcome"] == "refused"
     rejects = [e for e in session.events_since() if e["event"] == "check_result" and e["verdict"] == "reject"]
     assert rejects and rejects[0]["code"] == "SLOT_OCCUPIED"
@@ -71,39 +71,39 @@ def test_a_rejected_plan_moves_nothing(tmp_path):
 
 
 def test_a_question_waits_for_the_answer_typed_in_the_chat(tmp_path):
-    session = chat.ChatSession(planner=answers('{"ask": "Which bolt?"}', BOLT_TO_SLOT_4), log_dir=tmp_path)
-    assert session.submit("Move a bolt to slot 4")
+    session = chat.ChatSession(planner=answers('{"ask": "Which part?"}', BLUE_TO_SLOT_4), log_dir=tmp_path)
+    assert session.submit("Move it to slot 4")
     for _ in range(200):
         if "operator_question" in kinds(session):
             break
         session.wait(0.01)
-    session.answer("The one in BIN_1")
+    session.answer("The big blue one in BIN_4")
     session.wait(5)
     assert not session.busy
     events = session.events_since()
     question = next(e for e in events if e["event"] == "operator_question")
-    assert question["question"] == "Which bolt?"
+    assert question["question"] == "Which part?"
     intervention = next(e for e in events if e["event"] == "intervention")
-    assert intervention["answer"] == "The one in BIN_1"
+    assert intervention["answer"] == "The big blue one in BIN_4"
     assert kinds(session)[-1] == "idle"
-    assert session.state()["slots"]["SLOT_4"] == ["BOLT"]
+    assert session.state()["slots"]["SLOT_4"] == ["BRICK_2X4_BLUE"]
 
 
 def test_an_unanswered_question_gets_the_fixed_reply(tmp_path):
-    session = chat.ChatSession(planner=answers('{"ask": "Which bolt?"}', '{"refuse": "Not clear"}'),
+    session = chat.ChatSession(planner=answers('{"ask": "Which part?"}', '{"refuse": "Not clear"}'),
                                log_dir=tmp_path, answer_seconds=0.01)
-    summary = session.run("Move a bolt")
+    summary = session.run("Move it")
     intervention = next(e for e in session.events_since() if e["event"] == "intervention")
     assert intervention["answer"] == chat.NO_FURTHER_INFORMATION
     assert summary["outcome"] == "refused"
 
 
 def test_only_one_order_at_a_time_and_no_empty_orders(tmp_path):
-    session = chat.ChatSession(planner=answers('{"ask": "Which bolt?"}', '{"refuse": "no"}'), log_dir=tmp_path,
+    session = chat.ChatSession(planner=answers('{"ask": "Which part?"}', '{"refuse": "no"}'), log_dir=tmp_path,
                                answer_seconds=0.5)
     assert not session.submit("   ")
     assert not session.submit("x", variant="sideways")
-    assert session.submit("Move a bolt")
+    assert session.submit("Move it")
     assert not session.submit("Another order")
     assert not session.reset()
     session.wait(5)
@@ -119,7 +119,7 @@ def test_without_a_key_the_chat_says_so_and_calls_nothing(tmp_path, monkeypatch)
 
     monkeypatch.setattr(planner, "call_model", must_not_be_called)
     session = chat.ChatSession(log_dir=tmp_path)
-    assert session.run("Put the bolt in slot 4") is None
+    assert session.run("Put the big blue brick in slot 4") is None
     error = session.events_since()[-1]
     assert error["event"] == "error" and "GROQ_API_KEY is not set" in error["reason"]
 
@@ -133,16 +133,16 @@ def test_a_provider_limit_ends_the_order_with_a_message(tmp_path, monkeypatch):
 
     monkeypatch.setattr(planner, "call_model", limited)
     session = chat.ChatSession(log_dir=tmp_path, sleep=lambda seconds: None)
-    assert session.run("Put the bolt in slot 4") is None
+    assert session.run("Put the big blue brick in slot 4") is None
     events = session.events_since()
     assert events[-1]["event"] == "error" and "ProviderLimit" in events[-1]["reason"]
     assert "gsk_test_sentinel_key_0123456789" not in json.dumps(events)
 
 
 INTO_RETURN_FROM_SLOT_1 = plan(("move_to", {"position": "SLOT_1"}),
-                               ("pick", {"part": "SPACER_BLUE", "source": "SLOT_1"}),
+                               ("pick", {"part": "BRICK_2X4_BLUE", "source": "SLOT_1"}),
                                ("move_to", {"position": "RETURN"}),
-                               ("place", {"part": "SPACER_BLUE", "slot": "RETURN"}))
+                               ("place", {"part": "BRICK_2X4_BLUE", "slot": "RETURN"}))
 
 
 def test_the_checker_protects_the_ticked_slots_whatever_the_order_says(tmp_path):
@@ -150,7 +150,7 @@ def test_the_checker_protects_the_ticked_slots_whatever_the_order_says(tmp_path)
     session = chat.ChatSession(planner=answers(INTO_RETURN_FROM_SLOT_1, '{"refuse": "Slot 1 must stay unchanged"}'),
                                log_dir=tmp_path)
     before = session.state()
-    summary = session.run("Put the blue spacer from slot 1 in the return position", protected=["SLOT_3", "SLOT_1"])
+    summary = session.run("Put the big blue brick from slot 1 in the return position", protected=["SLOT_3", "SLOT_1"])
     assert summary["outcome"] == "refused"
     events = session.events_since()
     assert events[0]["protected"] == ["SLOT_1", "SLOT_3"]
@@ -164,15 +164,15 @@ def test_the_checker_protects_the_ticked_slots_whatever_the_order_says(tmp_path)
 
 def test_without_ticked_slots_the_same_plan_runs(tmp_path):
     session = chat.ChatSession(planner=answers(INTO_RETURN_FROM_SLOT_1), log_dir=tmp_path)
-    assert session.run("Put the blue spacer from slot 1 in the return position")["outcome"] == "done"
-    assert session.state()["return"] == ["SPACER_BLUE"]
+    assert session.run("Put the big blue brick from slot 1 in the return position")["outcome"] == "done"
+    assert session.state()["return"] == ["BRICK_2X4_BLUE"]
 
 
 def test_unknown_protected_slots_are_refused(tmp_path):
-    session = chat.ChatSession(planner=answers(BOLT_TO_SLOT_4), log_dir=tmp_path)
-    assert not session.submit("Move the bolt", protected=["SLOT_9"])
-    assert not session.submit("Move the bolt", protected="SLOT_1")
-    assert not session.submit("Move the bolt", protected=["BIN_1"])
+    session = chat.ChatSession(planner=answers(BLUE_TO_SLOT_4), log_dir=tmp_path)
+    assert not session.submit("Move it", protected=["SLOT_9"])
+    assert not session.submit("Move it", protected="SLOT_1")
+    assert not session.submit("Move it", protected=["BIN_1"])
     assert session.events_since() == []
 
 
@@ -183,7 +183,7 @@ def test_a_local_model_runs_without_a_key(tmp_path, monkeypatch):
 
     def fake_model(prompt, settings=None):
         seen.append(settings)
-        return json.dumps({"plan": [], "target": CHAPTER_13_START})
+        return json.dumps({"plan": [], "target": DEMO_START})
 
     monkeypatch.setattr(planner, "call_model", fake_model)
     session = chat.ChatSession(settings=planner.settings_for(local=True), log_dir=tmp_path, delay=0)
@@ -199,7 +199,7 @@ def test_armed_faults_go_off_once_and_the_closed_loop_recovers(tmp_path):
     from ssm3.demo import scripted_planner
 
     session = chat.ChatSession(planner=scripted_planner(), log_dir=tmp_path)
-    summary = session.run("Replace the short spacer in slot 2 with a long spacer", "closed",
+    summary = session.run("Replace the small red brick in slot 2 with the big red brick", "closed",
                           faults=["drop_part", "pick_failure"])
     assert summary["outcome"] == "done"
     events = session.events_since()
@@ -207,24 +207,24 @@ def test_armed_faults_go_off_once_and_the_closed_loop_recovers(tmp_path):
     injected = [e for e in events if e["event"] == "feedback" and e["kind"] == "injected failure"]
     assert [e["failure"] for e in injected] == ["pick_failure", "drop_part"]
     # The slip went off before a move with a part in the gripper, and the part fell into its own bin.
-    assert injected[1]["details"] == {"part": "SPACER_SHORT", "destination": "BIN_2"}
+    assert injected[1]["details"] == {"part": "BRICK_2X2_RED", "destination": "BIN_1"}
     statuses = [e["status"] for e in events if e["event"] == "step_result"]
     assert statuses.count("failed") == 1
-    assert session.state()["slots"]["SLOT_2"] == ["SPACER_LONG"]
+    assert session.state()["slots"]["SLOT_2"] == ["BRICK_2X4_RED"]
     # The next order runs without faults.
-    session.run("Put the bolt from BIN_1 in slot 4", "open")
+    session.run("Put the big blue brick from BIN_4 in slot 4", "open")
     assert not any(e["event"] == "feedback" for e in session.events_since(len(events)))
 
 
 def test_open_loop_stops_at_an_armed_pick_failure(tmp_path):
-    session = chat.ChatSession(planner=answers(BOLT_TO_SLOT_4), log_dir=tmp_path)
-    summary = session.run("Put the bolt from BIN_1 in slot 4", "open", faults=["pick_failure"])
+    session = chat.ChatSession(planner=answers(BLUE_TO_SLOT_4), log_dir=tmp_path)
+    summary = session.run("Put the big blue brick from BIN_4 in slot 4", "open", faults=["pick_failure"])
     assert summary["outcome"] == "stopped" and summary["steps_run"] == 2
-    assert session.state()["bins"]["BIN_1"] == ["BOLT"]
+    assert session.state()["bins"]["BIN_4"] == ["BRICK_2X4_BLUE"] * 2
 
 
 def test_unknown_faults_are_refused(tmp_path):
-    session = chat.ChatSession(planner=answers(BOLT_TO_SLOT_4), log_dir=tmp_path)
-    assert session.submit("Put the bolt in slot 4", faults=["explode"]) is False
-    assert session.submit("Put the bolt in slot 4", faults="pick_failure") is False
+    session = chat.ChatSession(planner=answers(BLUE_TO_SLOT_4), log_dir=tmp_path)
+    assert session.submit("Put the big blue brick in slot 4", faults=["explode"]) is False
+    assert session.submit("Put the big blue brick in slot 4", faults="pick_failure") is False
     assert session.events_since() == []

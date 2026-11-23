@@ -17,6 +17,22 @@ CHAPTER_13_TARGET = {"SLOT_1": ["SPACER_BLUE"], "SLOT_2": ["SPACER_LONG"], "SLOT
 # The tray at the start of Chapter 13, before the order: the tray of an order that changes nothing.
 CHAPTER_13_START = {"SLOT_1": ["SPACER_BLUE"], "SLOT_2": ["SPACER_SHORT"], "SLOT_3": ["BOLT"], "SLOT_4": []}
 
+# The same order with the bricks of DD24, as the demo and chat mode run it (demo.py): the small red brick in
+# slot 2 is replaced by the big red brick, slots 1 and 3 unchanged.
+DEMO_START = {"SLOT_1": ["BRICK_2X4_BLUE"], "SLOT_2": ["BRICK_2X2_RED"], "SLOT_3": ["BRICK_2X4_YELLOW"], "SLOT_4": []}
+DEMO_TARGET = {"SLOT_1": ["BRICK_2X4_BLUE"], "SLOT_2": ["BRICK_2X4_RED"], "SLOT_3": ["BRICK_2X4_YELLOW"], "SLOT_4": []}
+DEMO_PLAN = [
+    {"function": "move_to", "args": {"position": "SLOT_2"}},
+    {"function": "pick", "args": {"part": "BRICK_2X2_RED", "source": "SLOT_2"}},
+    {"function": "move_to", "args": {"position": "RETURN"}},
+    {"function": "place", "args": {"part": "BRICK_2X2_RED", "slot": "RETURN"}},
+    {"function": "move_to", "args": {"position": "BIN_2"}},
+    {"function": "pick", "args": {"part": "BRICK_2X4_RED", "source": "BIN_2"}},
+    {"function": "move_to", "args": {"position": "SLOT_2"}},
+    {"function": "place", "args": {"part": "BRICK_2X4_RED", "slot": "SLOT_2", "level": "base"}},
+    {"function": "move_to", "args": {"position": "HOME"}},
+]
+
 
 def planned_tray(steps, state, capability):
     """The tray after the steps of a plan, replayed on a copy of the cell up to the first step that fails."""

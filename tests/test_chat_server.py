@@ -2,14 +2,15 @@
 
 import json
 
-from target_helper import CHAPTER_13_START, add_target
+from target_helper import DEMO_START, add_target
 
 from ssm3 import chat, chat_server
 
-PLAN = json.dumps({"plan": [{"function": "move_to", "args": {"position": "BIN_1"}},
-                            {"function": "pick", "args": {"part": "BOLT", "source": "BIN_1"}},
+PLAN = json.dumps({"plan": [{"function": "move_to", "args": {"position": "BIN_4"}},
+                            {"function": "pick", "args": {"part": "BRICK_2X4_BLUE", "source": "BIN_4"}},
                             {"function": "move_to", "args": {"position": "SLOT_4"}},
-                            {"function": "place", "args": {"part": "BOLT", "slot": "SLOT_4", "level": "base"}}]})
+                            {"function": "place",
+                             "args": {"part": "BRICK_2X4_BLUE", "slot": "SLOT_4", "level": "base"}}]})
 
 
 def session(tmp_path, *raw):
@@ -36,27 +37,27 @@ def test_the_page_is_served(tmp_path):
 
 def test_an_order_runs_and_its_events_can_be_read(tmp_path):
     s = session(tmp_path, PLAN)
-    assert call(s, "POST", "/api/order", {"text": "Put the bolt from BIN_1 in slot 4", "variant": "open"}) == \
-        (200, {"ok": True, "error": None})
+    order = {"text": "Put the big blue brick from BIN_4 in slot 4", "variant": "open"}
+    assert call(s, "POST", "/api/order", order) == (200, {"ok": True, "error": None})
     s.wait(5)
     status, data = call(s, "GET", "/api/events?since=0")
     assert status == 200 and data["busy"] is False
     assert data["events"][0]["event"] == "user" and data["events"][-1]["event"] == "idle"
-    assert data["state"]["slots"]["SLOT_4"] == ["BOLT"]
+    assert data["state"]["slots"]["SLOT_4"] == ["BRICK_2X4_BLUE"]
     later = call(s, "GET", f"/api/events?since={len(data['events']) - 1}")[1]["events"]
     assert [e["event"] for e in later] == ["idle"]
 
 
 def test_a_question_is_answered_through_the_route(tmp_path):
-    s = session(tmp_path, '{"ask": "Which bolt?"}', PLAN)
-    call(s, "POST", "/api/order", {"text": "Move a bolt to slot 4"})
+    s = session(tmp_path, '{"ask": "Which part?"}', PLAN)
+    call(s, "POST", "/api/order", {"text": "Move it to slot 4"})
     for _ in range(200):
         if any(e["event"] == "operator_question" for e in s.events_since()):
             break
         s.wait(0.01)
-    assert call(s, "POST", "/api/answer", {"text": "The one in BIN_1"})[0] == 200
+    assert call(s, "POST", "/api/answer", {"text": "The big blue one in BIN_4"})[0] == 200
     s.wait(5)
-    assert next(e for e in s.events_since() if e["event"] == "intervention")["answer"] == "The one in BIN_1"
+    assert next(e for e in s.events_since() if e["event"] == "intervention")["answer"] == "The big blue one in BIN_4"
 
 
 def test_other_sites_and_other_formats_are_refused(tmp_path):
@@ -72,9 +73,9 @@ def test_other_sites_and_other_formats_are_refused(tmp_path):
 
 
 def test_an_empty_order_and_a_second_order_are_refused(tmp_path):
-    s = session(tmp_path, '{"ask": "Which bolt?"}', '{"refuse": "no"}')
+    s = session(tmp_path, '{"ask": "Which part?"}', '{"refuse": "no"}')
     assert call(s, "POST", "/api/order", {"text": " "})[0] == 409
-    assert call(s, "POST", "/api/order", {"text": "Move a bolt"})[0] == 200
+    assert call(s, "POST", "/api/order", {"text": "Move it"})[0] == 200
     assert call(s, "POST", "/api/order", {"text": "Another"})[0] == 409
     assert call(s, "POST", "/api/reset", {})[0] == 409
     s.wait(5)
@@ -97,11 +98,11 @@ def test_main_builds_a_session_with_the_options(monkeypatch):
 
 def test_an_order_carries_the_ticked_slots_to_the_checker(tmp_path):
     touches_slot_1 = json.dumps({"plan": [{"function": "move_to", "args": {"position": "SLOT_1"}},
-                                          {"function": "pick", "args": {"part": "SPACER_BLUE", "source": "SLOT_1"}}],
-                                 "target": CHAPTER_13_START})
+                                          {"function": "pick", "args": {"part": "BRICK_2X4_BLUE", "source": "SLOT_1"}}],
+                                 "target": DEMO_START})
     s = session(tmp_path, touches_slot_1, '{"refuse": "Slot 1 stays unchanged"}')
     assert call(s, "GET", "/api/events")[1]["default_protected"] == ["SLOT_1", "SLOT_3"]
-    assert call(s, "POST", "/api/order", {"text": "Take the blue spacer", "protected": ["SLOT_1"]})[0] == 200
+    assert call(s, "POST", "/api/order", {"text": "Take the big blue brick", "protected": ["SLOT_1"]})[0] == 200
     s.wait(5)
     reject = next(e for e in s.events_since() if e["event"] == "check_result")
     assert reject["code"] == "PROTECTED_SLOT"
