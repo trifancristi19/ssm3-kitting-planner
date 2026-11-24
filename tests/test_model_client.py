@@ -82,6 +82,44 @@ def test_the_request_follows_the_settings(key):
     assert timeout == 60
 
 
+def test_the_answer_keeps_the_token_use_of_the_provider(key):
+    body = {"choices": [{"message": {"content": "{}"}}],
+            "usage": {"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150}}
+
+    def opener(request, timeout):
+        return FakeResponse(json.dumps(body).encode("utf-8"))
+
+    answer = call_model("p", opener=opener)
+    assert answer == "{}"
+    assert answer.usage == {"prompt": 120, "completion": 30, "total": 150}
+
+
+def test_an_answer_without_token_use_has_none(key):
+    def opener(request, timeout):
+        return FakeResponse(json.dumps({"choices": [{"message": {"content": "{}"}}]}).encode("utf-8"))
+
+    assert call_model("p", opener=opener).usage is None
+    assert planner.ModelAnswer("text").usage is None
+
+
+def test_the_run_log_stores_the_tokens_of_every_model_call(key, cell, chapter6_plan):
+    body = {"choices": [{"message": {"content": json.dumps({"plan": chapter6_plan})}}],
+            "usage": {"prompt_tokens": 200, "completion_tokens": 50, "total_tokens": 250}}
+
+    def opener(request, timeout):
+        return FakeResponse(json.dumps(body).encode("utf-8"))
+
+    from ssm3.console import ScriptedOperator
+
+    log = RunLog("tokens")
+    orchestrator.run_order({"order_id": "K-17", "text": "swap"}, "open loop",
+                           planner=lambda order, state, capability, history: call_model("p", opener=opener),
+                           cell=cell, operator=ScriptedOperator(), log=log, expected_plan=chapter6_plan)
+    [record] = log.of_kind("planner_response")
+    assert record["tokens"] == {"prompt": 200, "completion": 50, "total": 250}
+    assert type(record["raw"]) is str
+
+
 def test_the_default_settings_follow_the_design_document():
     # DD17 (proposed main model, the exact ID of the model tests), Chapter 7 and NFR1 (temperature 0, JSON), DD14.
     assert DEFAULT_SETTINGS["model"] == "openai/gpt-oss-120b"

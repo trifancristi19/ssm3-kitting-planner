@@ -267,9 +267,31 @@ def _retry_after(error):
         return None
 
 
+class ModelAnswer(str):
+    """The raw text of a model answer. usage holds the token counts the provider reported, or None (Table 11)."""
+
+    usage = None
+
+    def __new__(cls, text, usage=None):
+        answer = super().__new__(cls, text)
+        answer.usage = usage
+        return answer
+
+
+def _token_usage(answer):
+    """The token counts of a chat completions answer as {"prompt": n, "completion": n, "total": n}, or None."""
+    usage = answer.get("usage") if isinstance(answer, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    counts = {"prompt": usage.get("prompt_tokens"), "completion": usage.get("completion_tokens"),
+              "total": usage.get("total_tokens")}
+    return counts if any(isinstance(value, int) for value in counts.values()) else None
+
+
 def call_model(prompt, settings=None, opener=None):
     """Send the prompt to the configured model and return its raw answer as text.
 
+    The text is a ModelAnswer, which also holds the token use the provider reported.
     settings defaults to DEFAULT_SETTINGS. opener replaces urllib.request.urlopen, so the
     tests never reach the network. A rate limit, a server error or a lost connection raises
     ProviderLimit, a call over the time limit raises ModelTimeout, and a refused key or a
@@ -310,7 +332,7 @@ def call_model(prompt, settings=None, opener=None):
             raise ModelTimeout(f"no answer within {settings['timeout_seconds']} seconds") from None
         raise ProviderLimit(f"could not reach {provider}: {error.reason}.{_ollama_hint(settings)}") from None
     try:
-        return answer["choices"][0]["message"].get("content") or ""
+        return ModelAnswer(answer["choices"][0]["message"].get("content") or "", _token_usage(answer))
     except (KeyError, IndexError, TypeError, AttributeError):
         raise ProviderLimit(f"{provider} sent an answer without a message") from None
 

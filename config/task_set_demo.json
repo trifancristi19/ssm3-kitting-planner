@@ -1,0 +1,23 @@
+{
+  "K-17": {
+    "order_id": "K-17",
+    "kit_id": "",
+    "text": "Replace the short spacer in slot 2 with a long spacer. Put the short spacer in the return position. Leave slots 1 and 3 unchanged.",
+    "target": {
+      "SLOT_1": ["SPACER_BLUE"],
+      "SLOT_2": ["SPACER_LONG"],
+      "SLOT_3": ["BOLT"],
+      "SLOT_4": []
+    },
+    "protected": ["SLOT_1", "SLOT_3"],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["SPACER_BLUE"],
+        "SLOT_2": ["SPACER_LONG"],
+        "SLOT_3": ["BOLT"],
+        "SLOT_4": []
+      }
+    }
+  }
+}

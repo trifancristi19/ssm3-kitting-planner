@@ -18,7 +18,7 @@ from ssm3.orchestrator import (
     run_with_provider_repeats,
     step_budget,
 )
-from ssm3.planner import ModelTimeout
+from ssm3.planner import ModelAnswer, ModelTimeout
 
 
 def test_step_budget_is_twice_the_expected_plan(capability, chapter6_plan):
@@ -131,6 +131,36 @@ def test_open_loop_runs_the_chapter_6_plan(cell, chapter6_plan):
     kinds = [record["event"] for record in log.records]
     assert kinds == ["run_start", "planner_response", "check_result"] + ["step_result"] * 9 + ["run_end"]
     assert operator.messages == []
+
+
+def test_a_planner_without_token_use_logs_none(cell, chapter6_plan):
+    _, log, _ = run(cell, "open loop", FakePlanner(plan(chapter6_plan)), expected_plan=chapter6_plan)
+    assert log.of_kind("planner_response")[0]["tokens"] is None
+
+
+def test_every_row_of_table_11_is_in_the_log(cell, chapter6_plan):
+    info = {"model": "openai/gpt-oss-120b", "settings": {"temperature": 0}, "prompt_version": "S2-P2"}
+    log = RunLog("table-11")
+    planner = FakePlanner(json.dumps({"ask": "Which spacer?"}), *[remaining(chapter6_plan)] * 11)
+    run_order(ORDER, "closed loop", planner=lambda *args: _with_tokens(planner(*args)), cell=cell,
+              operator=ScriptedOperator(), log=log, protected=PROTECTED, expected_plan=chapter6_plan, info=info,
+              failures={2: ("pick_failure", {})})
+    start = log.of_kind("run_start")[0]
+    assert start["order_id"] == "K-17" and start["instruction"] == ORDER["text"]            # task ID and instruction
+    assert start["variant"] == "closed loop"                                                  # planner variant
+    assert (start["model"], start["settings"], start["prompt_version"]) == (
+        "openai/gpt-oss-120b", {"temperature": 0}, "S2-P2")                                   # model, settings, prompt
+    assert {"raw", "tokens", "seconds"} <= set(log.of_kind("planner_response")[0])            # plans, tokens, latency
+    assert {"verdict", "code", "reason"} <= set(log.of_kind("check_result")[0])               # check result
+    assert {"status", "message", "state"} <= set(log.of_kind("step_result")[0])               # execution result
+    assert {record["kind"] for record in log.of_kind("feedback")} >= {"injected failure"}     # feedback events
+    assert {"kind", "question", "answer", "wait_seconds"} <= set(log.of_kind("intervention")[0])  # interventions
+    assert log.of_kind("planner_response")[0]["tokens"] == {"prompt": 1, "completion": 1, "total": 2}
+    assert all("time" in record for record in log.records)                                    # timestamps
+
+
+def _with_tokens(raw):
+    return ModelAnswer(raw, {"prompt": 1, "completion": 1, "total": 2})
 
 
 def test_closed_loop_calls_the_planner_after_every_step(cell, chapter6_plan):

@@ -138,8 +138,8 @@ class _Run:
         self.planner_calls += 1
         start = time.perf_counter()
         raw = self.planner(self.order["text"], self.cell.state(), self.cell.capability, list(self.history))
-        self.log.event("planner_response", call=self.planner_calls, raw=raw,
-                       seconds=round(time.perf_counter() - start, 3))
+        self.log.event("planner_response", call=self.planner_calls, raw=str(raw) if isinstance(raw, str) else raw,
+                       tokens=getattr(raw, "usage", None), seconds=round(time.perf_counter() - start, 3))
         return raw
 
     def reject(self, verdict):
