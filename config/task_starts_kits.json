@@ -1,0 +1,14 @@
+{
+  "stock_per_bin": 2,
+  "start_kit": {
+    "K-A": "",
+    "K-B": "",
+    "K-C": "",
+    "K-A-B": "KIT_A",
+    "K-A-C": "KIT_A",
+    "K-B-A": "KIT_B",
+    "K-B-C": "KIT_B",
+    "K-C-A": "KIT_C",
+    "K-C-B": "KIT_C"
+  }
+}
