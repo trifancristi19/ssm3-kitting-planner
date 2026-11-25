@@ -1,0 +1,191 @@
+{
+  "K-A": {
+    "order_id": "K-A",
+    "kit_id": "KIT_A",
+    "text": "Build kit A: a large red brick in slot 1, a small blue brick in slot 2, a large yellow brick in slot 3 and a small red brick in slot 4.",
+    "target": {
+      "SLOT_1": ["BRICK_2X4_RED"],
+      "SLOT_2": ["BRICK_2X2_BLUE"],
+      "SLOT_3": ["BRICK_2X4_YELLOW"],
+      "SLOT_4": ["BRICK_2X2_RED"]
+    },
+    "protected": [],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["BRICK_2X4_RED"],
+        "SLOT_2": ["BRICK_2X2_BLUE"],
+        "SLOT_3": ["BRICK_2X4_YELLOW"],
+        "SLOT_4": ["BRICK_2X2_RED"]
+      }
+    }
+  },
+  "K-B": {
+    "order_id": "K-B",
+    "kit_id": "KIT_B",
+    "text": "Build kit B: a large blue brick in slot 1 with a small blue brick on top, a large red brick in slot 2, a large yellow brick in slot 3 with a small red brick on top and slot 4 empty.",
+    "target": {
+      "SLOT_1": ["BRICK_2X4_BLUE", "BRICK_2X2_BLUE"],
+      "SLOT_2": ["BRICK_2X4_RED"],
+      "SLOT_3": ["BRICK_2X4_YELLOW", "BRICK_2X2_RED"],
+      "SLOT_4": []
+    },
+    "protected": [],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["BRICK_2X4_BLUE", "BRICK_2X2_BLUE"],
+        "SLOT_2": ["BRICK_2X4_RED"],
+        "SLOT_3": ["BRICK_2X4_YELLOW", "BRICK_2X2_RED"],
+        "SLOT_4": []
+      }
+    }
+  },
+  "K-C": {
+    "order_id": "K-C",
+    "kit_id": "KIT_C",
+    "text": "Build kit C: a small red brick in slot 1, a large red brick in slot 2, a small yellow brick in slot 3 and a large yellow brick in slot 4.",
+    "target": {
+      "SLOT_1": ["BRICK_2X2_RED"],
+      "SLOT_2": ["BRICK_2X4_RED"],
+      "SLOT_3": ["BRICK_2X2_YELLOW"],
+      "SLOT_4": ["BRICK_2X4_YELLOW"]
+    },
+    "protected": [],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["BRICK_2X2_RED"],
+        "SLOT_2": ["BRICK_2X4_RED"],
+        "SLOT_3": ["BRICK_2X2_YELLOW"],
+        "SLOT_4": ["BRICK_2X4_YELLOW"]
+      }
+    }
+  },
+  "K-A-B": {
+    "order_id": "K-A-B",
+    "kit_id": "KIT_B",
+    "text": "Change the tray from kit A to kit B: a large blue brick in slot 1 with a small blue brick on top, a large red brick in slot 2, a large yellow brick in slot 3 with a small red brick on top and slot 4 empty. Put the bricks that are not needed in the return position.",
+    "target": {
+      "SLOT_1": ["BRICK_2X4_BLUE", "BRICK_2X2_BLUE"],
+      "SLOT_2": ["BRICK_2X4_RED"],
+      "SLOT_3": ["BRICK_2X4_YELLOW", "BRICK_2X2_RED"],
+      "SLOT_4": []
+    },
+    "protected": [],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["BRICK_2X4_BLUE", "BRICK_2X2_BLUE"],
+        "SLOT_2": ["BRICK_2X4_RED"],
+        "SLOT_3": ["BRICK_2X4_YELLOW", "BRICK_2X2_RED"],
+        "SLOT_4": []
+      }
+    }
+  },
+  "K-A-C": {
+    "order_id": "K-A-C",
+    "kit_id": "KIT_C",
+    "text": "Change the tray from kit A to kit C: a small red brick in slot 1, a large red brick in slot 2, a small yellow brick in slot 3 and a large yellow brick in slot 4. Put the bricks that are not needed in the return position.",
+    "target": {
+      "SLOT_1": ["BRICK_2X2_RED"],
+      "SLOT_2": ["BRICK_2X4_RED"],
+      "SLOT_3": ["BRICK_2X2_YELLOW"],
+      "SLOT_4": ["BRICK_2X4_YELLOW"]
+    },
+    "protected": [],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["BRICK_2X2_RED"],
+        "SLOT_2": ["BRICK_2X4_RED"],
+        "SLOT_3": ["BRICK_2X2_YELLOW"],
+        "SLOT_4": ["BRICK_2X4_YELLOW"]
+      }
+    }
+  },
+  "K-B-A": {
+    "order_id": "K-B-A",
+    "kit_id": "KIT_A",
+    "text": "Change the tray from kit B to kit A: a large red brick in slot 1, a small blue brick in slot 2, a large yellow brick in slot 3 and a small red brick in slot 4. Put the bricks that are not needed in the return position.",
+    "target": {
+      "SLOT_1": ["BRICK_2X4_RED"],
+      "SLOT_2": ["BRICK_2X2_BLUE"],
+      "SLOT_3": ["BRICK_2X4_YELLOW"],
+      "SLOT_4": ["BRICK_2X2_RED"]
+    },
+    "protected": [],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["BRICK_2X4_RED"],
+        "SLOT_2": ["BRICK_2X2_BLUE"],
+        "SLOT_3": ["BRICK_2X4_YELLOW"],
+        "SLOT_4": ["BRICK_2X2_RED"]
+      }
+    }
+  },
+  "K-B-C": {
+    "order_id": "K-B-C",
+    "kit_id": "KIT_C",
+    "text": "Change the tray from kit B to kit C: a small red brick in slot 1, a large red brick in slot 2, a small yellow brick in slot 3 and a large yellow brick in slot 4. Put the bricks that are not needed in the return position.",
+    "target": {
+      "SLOT_1": ["BRICK_2X2_RED"],
+      "SLOT_2": ["BRICK_2X4_RED"],
+      "SLOT_3": ["BRICK_2X2_YELLOW"],
+      "SLOT_4": ["BRICK_2X4_YELLOW"]
+    },
+    "protected": [],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["BRICK_2X2_RED"],
+        "SLOT_2": ["BRICK_2X4_RED"],
+        "SLOT_3": ["BRICK_2X2_YELLOW"],
+        "SLOT_4": ["BRICK_2X4_YELLOW"]
+      }
+    }
+  },
+  "K-C-A": {
+    "order_id": "K-C-A",
+    "kit_id": "KIT_A",
+    "text": "Change the tray from kit C to kit A: a large red brick in slot 1, a small blue brick in slot 2, a large yellow brick in slot 3 and a small red brick in slot 4. Put the bricks that are not needed in the return position.",
+    "target": {
+      "SLOT_1": ["BRICK_2X4_RED"],
+      "SLOT_2": ["BRICK_2X2_BLUE"],
+      "SLOT_3": ["BRICK_2X4_YELLOW"],
+      "SLOT_4": ["BRICK_2X2_RED"]
+    },
+    "protected": [],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["BRICK_2X4_RED"],
+        "SLOT_2": ["BRICK_2X2_BLUE"],
+        "SLOT_3": ["BRICK_2X4_YELLOW"],
+        "SLOT_4": ["BRICK_2X2_RED"]
+      }
+    }
+  },
+  "K-C-B": {
+    "order_id": "K-C-B",
+    "kit_id": "KIT_B",
+    "text": "Change the tray from kit C to kit B: a large blue brick in slot 1 with a small blue brick on top, a large red brick in slot 2, a large yellow brick in slot 3 with a small red brick on top and slot 4 empty. Put the bricks that are not needed in the return position.",
+    "target": {
+      "SLOT_1": ["BRICK_2X4_BLUE", "BRICK_2X2_BLUE"],
+      "SLOT_2": ["BRICK_2X4_RED"],
+      "SLOT_3": ["BRICK_2X4_YELLOW", "BRICK_2X2_RED"],
+      "SLOT_4": []
+    },
+    "protected": [],
+    "expected_outcome": "done",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": ["BRICK_2X4_BLUE", "BRICK_2X2_BLUE"],
+        "SLOT_2": ["BRICK_2X4_RED"],
+        "SLOT_3": ["BRICK_2X4_YELLOW", "BRICK_2X2_RED"],
+        "SLOT_4": []
+      }
+    }
+  }
+}

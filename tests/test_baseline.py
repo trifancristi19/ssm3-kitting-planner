@@ -2,7 +2,6 @@
 
 import pytest
 
-from ssm3 import baseline
 from ssm3.baseline import plan_from_layout
 from ssm3.cell import SimulatedCell
 from ssm3.checker import check
@@ -104,11 +103,6 @@ def test_more_parts_than_levels_is_an_error(cell):
     change = order("K-23", cell.state(), SLOT_4=["BOLT", "BOLT", "BOLT"])
     with pytest.raises(ValueError):
         plan_from_layout(change, cell.state(), cell.capability)
-
-
-def test_recipe_table_is_still_a_stub():
-    with pytest.raises(NotImplementedError):
-        baseline.plan_from_recipe("KIT_A")
 
 
 def test_a_slot_the_capability_file_does_not_know_is_an_error(cell):

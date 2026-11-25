@@ -1,0 +1,20 @@
+{
+  "KIT_A": {
+    "SLOT_1": ["BRICK_2X4_RED"],
+    "SLOT_2": ["BRICK_2X2_BLUE"],
+    "SLOT_3": ["BRICK_2X4_YELLOW"],
+    "SLOT_4": ["BRICK_2X2_RED"]
+  },
+  "KIT_B": {
+    "SLOT_1": ["BRICK_2X4_BLUE", "BRICK_2X2_BLUE"],
+    "SLOT_2": ["BRICK_2X4_RED"],
+    "SLOT_3": ["BRICK_2X4_YELLOW", "BRICK_2X2_RED"],
+    "SLOT_4": []
+  },
+  "KIT_C": {
+    "SLOT_1": ["BRICK_2X2_RED"],
+    "SLOT_2": ["BRICK_2X4_RED"],
+    "SLOT_3": ["BRICK_2X2_YELLOW"],
+    "SLOT_4": ["BRICK_2X4_YELLOW"]
+  }
+}
