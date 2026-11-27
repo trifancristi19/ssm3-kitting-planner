@@ -25,11 +25,11 @@ src/ssm3/                        the system, one module per component (Design Do
   logger.py                      run logger (Chapter 10)
   evaluator.py                   the six measures (Chapter 10)
   demo.py                        terminal demo for Gate A (Chapter 13)
-  viewer.py, viewer_page.html    replay page of a run log, in 2D or 3D
+  experiment.py                  runs one task with baseline, open loop and closed loop, then the evaluator  viewer.py, viewer_page.html    replay page of a run log, in 2D or 3D
   cell3d.js                      3D view of the cell and the pose of the arm, used by the replay and chat pages
   vendor/three.min.js            three.js 0.147.0 (MIT licence, vendor/three.LICENSE), for the 3D view
   chat.py, chat_server.py        chat mode: typed orders on a local web page (chat_page.html)
-scripts/                         demo.py, view.py, chat.py and evaluate.py, which run from a fresh clone
+scripts/                         demo.py, view.py, chat.py, evaluate.py and experiment.py, which run from a fresh clone
 study1/tasks.py                  Study 1 task set and checker, unchanged apart from the Excel logging
 tests/                           pytest tests
 ```
@@ -95,7 +95,15 @@ Without a file it opens the newest log in `demo_logs/`.
 .venv\Scripts\python scripts\evaluate.py
 ```
 
-prints the six measures of the evaluator (Chapter 10) as two tables, one row per run and one per variant, for the `demo-*.jsonl` logs in `demo_logs/`. Give log files as arguments to evaluate other runs, and `--tasks <file>.json` to use another task set. Each order of a task set has the fields of DD23: `order_id`, `kit_id`, `text`, `target`, `protected`, plus `expected_outcome` (`done`, `ask` or `refuse`) and `expected_tray`. The file is checked when it is loaded (`load_task_set`), and `--capability <file>.json` also checks its slots, parts and levels against a cell. The format is in the docstring of `src/ssm3/evaluator.py`. The run logs now hold the token use of every model call in `planner_response` (`tokens`, none for a scripted planner). The default task set, `config/task_set_demo.json`, has only order K-17 of the demo, so logs of other orders, such as those of the chat mode, need their own task set. The demo logs are scripted runs, so their model times are 0.
+prints the six measures of the evaluator (Chapter 10) as three tables: one row per run, one per variant (the main comparison of open loop, closed loop and baseline) and one per condition (variant, model and prompt version, with the runs per task), for the `demo-*.jsonl` logs in `demo_logs/`. Give log files as arguments to evaluate other runs, `--tasks <file>.json` to use another task set, and `--json <file>` to also write the runs and summaries as JSON. Each order of a task set has the fields of DD23: `order_id`, `kit_id`, `text`, `target`, `protected`, plus `expected_outcome` (`done`, `ask` or `refuse`) and `expected_tray`. The file is checked when it is loaded (`load_task_set`), and `--capability <file>.json` also checks its slots, parts and levels against a cell. The format is in the docstring of `src/ssm3/evaluator.py`. A refuse task also counts as right when the checker blocked the order with `RULE_OVERRIDE`, and the baseline needs no question for an ask task, because it gets the structured order (DD25). The run logs hold the token use of every model call in `planner_response` (`tokens`, none for a scripted planner). When a `planner_response` also holds the planner's `target` (DD25, DD26, not logged yet), the tables show whether the target was right and reached, so a wrong interpretation is told apart from a wrong plan. The default task set, `config/task_set_demo.json`, has only order K-17 of the demo, so logs of other orders, such as those of the chat mode, need their own task set. The demo logs are scripted runs, so their model times are close to 0.
+
+### Comparing the baseline with the language model
+
+```
+.venv\Scripts\python scripts\experiment.py
+```
+
+runs order K-17 (the start tray of Chapter 13) with the three approaches of the comparison: the **baseline** (no language model, `plan_from_layout` on the structured order), the **open loop** and the **closed loop** (the real model on Groq, so it needs `GROQ_API_KEY` and uses the free-tier limit). Every approach runs a clean case and a case with a pick failure at the first pick (for the recovery measure), 5 times each by default (`--reps`, Chapter 8). All runs use the same cell, checker, loop and log, and the runner then prints the evaluator tables for each case. The logs are saved as `demo-exp-*.jsonl` in `demo_logs/`, so `scripts\evaluate.py` shows them too. Without a key only the baseline runs; `--no-llm` runs the baseline alone, `--local` uses Ollama, and `--model`, `--delay`, `--log-dir` and `--json <file>` are as in the demo and the evaluator. A run that hits a provider limit is repeated at most three times and then listed as not run (DD21). Pilot runs are exploratory (DD22).
 
 ### Chat mode
 

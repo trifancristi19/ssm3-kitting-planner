@@ -18,7 +18,8 @@ The rules of the loop:
   the planner is called again with the answer.
 - A refusal stops the run and the operator is told.
 - The open loop runs the whole checked plan and stops safely at a failed step
-  (DD16). The closed loop runs the first step of every checked plan and then
+  (DD16). The baseline, which plans without a language model (Chapter 11), runs
+  its one checked plan in the same way. The closed loop runs the first step of every checked plan and then
   calls the planner again with the result and the new state (Table 8). It ends
   only when the planner answers with an empty plan, which the prompt asks for
   when the order is complete (proposal). So a planner that sends only the next
@@ -54,7 +55,8 @@ from ssm3.planner import ModelTimeout, ProviderLimit, ResponseFormatError, parse
 __all__ = ["FAULTS", "PROVIDER_REPEATS", "REJECTS_BEFORE_ASKING", "VARIANTS", "ProviderLimit", "run_order",
            "run_with_provider_repeats", "step_budget"]
 
-VARIANTS = ("open loop", "closed loop")
+# The baseline (Chapter 11) plans without a language model and runs its one checked plan like the open loop.
+VARIANTS = ("open loop", "closed loop", "baseline")
 
 # The failures that can be armed for the first step they fit (proposal, chat mode).
 FAULTS = ("pick_failure", "drop_part")
@@ -131,7 +133,7 @@ class _Run:
         answer = functions.ask_operator(question, self.operator)
         self.interventions += 1
         self.log.event("intervention", kind=kind, source=source, question=question, answer=answer,
-                       wait_seconds=round(time.perf_counter() - start, 3))
+                       wait_seconds=round(time.perf_counter() - start, 6))
         self.history.append({"type": "answer", "question": question, "answer": answer})
 
     def call_planner(self):
@@ -139,7 +141,7 @@ class _Run:
         start = time.perf_counter()
         raw = self.planner(self.order["text"], self.cell.state(), self.cell.capability, list(self.history))
         self.log.event("planner_response", call=self.planner_calls, raw=str(raw) if isinstance(raw, str) else raw,
-                       tokens=getattr(raw, "usage", None), seconds=round(time.perf_counter() - start, 3))
+                       tokens=getattr(raw, "usage", None), seconds=round(time.perf_counter() - start, 6))
         return raw
 
     def reject(self, verdict):
@@ -162,7 +164,7 @@ class _Run:
 
     def run_steps(self, plan):
         """Run the checked plan (open loop) or its first step (closed loop). Returns a summary or None."""
-        steps = plan if self.variant == "open loop" else plan[:1]
+        steps = plan if self.variant != "closed loop" else plan[:1]
         for step in steps:
             if self.steps_run >= self.budget:
                 return self.finish("stopped", f"the step budget of {self.budget} steps is used up")
@@ -186,13 +188,13 @@ class _Run:
                                  "status": result.status, "message": result.message})
             # locate only reads the state, so "not found" is information, not a failed step (proposal).
             if result.status != "success" and name != "locate":
-                if self.variant == "open loop":
+                if self.variant != "closed loop":
                     return self.finish("stopped", f"step {self.steps_run} {name} returned {result.status}, "
                                                   "not recovered (DD16)")
                 self.log.event("feedback", kind="failure sent to the planner", step=self.steps_run,
                                status=result.status, message=result.message)
                 return None
-        if self.variant == "open loop":
+        if self.variant != "closed loop":
             return self.finish("done", "the last step of the plan is done")
         # The closed loop always asks the planner again, and ends only on an empty plan (proposal, OD14).
         return None
@@ -265,7 +267,7 @@ def run_order(order, variant, *, planner, cell, operator, log, protected=(), exp
               faults=(), info=None):
     """Run one order from planning to the final tray and return its summary.
 
-    order is {"order_id": ..., "text": ...}. variant is "open loop" or "closed loop".
+    order is {"order_id": ..., "text": ...}. variant is "open loop", "closed loop" or "baseline".
     planner returns the raw model answer (see the module docstring), cell is the
     simulated cell, operator a console operator and log a logger.RunLog. protected
     lists the slots the order keeps unchanged (from the task set). expected_plan

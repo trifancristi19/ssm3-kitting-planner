@@ -22,11 +22,11 @@ TARGET = {"SLOT_1": ["SPACER_BLUE"], "SLOT_2": ["SPACER_LONG"], "SLOT_3": ["BOLT
 TASKS = {"K-17": {"expected_tray": {"slots": TARGET}}}
 
 
-def make_log(run_id="r1", variant="open loop", order_id="K-17"):
+def make_log(run_id="r1", variant="open loop", order_id="K-17", **info):
     ticks = itertools.count()
     start = datetime(2026, 11, 23, 10, 0, 0, tzinfo=UTC)
     log = RunLog(run_id, clock=lambda: start + timedelta(seconds=next(ticks)))
-    log.event("run_start", order_id=order_id, variant=variant, instruction="text", protected=["SLOT_1"])
+    log.event("run_start", order_id=order_id, variant=variant, instruction="text", protected=["SLOT_1"], **info)
     return log
 
 
@@ -40,8 +40,8 @@ def check(log, verdict="run", code=None):
     log.event("check_result", verdict=verdict, step=None, code=code, reason="")
 
 
-def answer(log, seconds=1.0):
-    log.event("planner_response", call=1, raw="{}", seconds=seconds)
+def answer(log, seconds=1.0, **extra):
+    log.event("planner_response", call=1, raw="{}", seconds=seconds, **extra)
 
 
 def question(log, kind="clarification", wait=2.0):
@@ -261,6 +261,7 @@ def test_a_run_without_run_end_is_not_run_and_counts_nowhere():
     good = finish(make_log("good"))
     result = compute_measures([limited, good], TASKS)
     assert result["runs"][0] == {"run_id": "limited", "order_id": "K-17", "variant": "open loop",
+                                 "model": None, "prompt_version": None, "condition": "open loop / - / -",
                                  "status": "not run"}
     summary = result["summary"]["open loop"]
     assert (summary["runs"], summary["not_run"], summary["task_success_rate"]) == (1, 1, 1.0)
@@ -375,6 +376,192 @@ def test_the_command_stops_with_a_message_for_an_order_not_in_the_task_set(tmp_p
                     encoding="utf-8")
     with pytest.raises(SystemExit, match="not in the task set"):
         main([str(path)], out=lambda text: None)
+
+
+WRONG = {**TARGET, "SLOT_2": ["SPACER_SHORT"]}
+
+
+# The baseline, the planner's target and the conditions (Chapters 10 and 11, DD25, DD26)
+
+def test_the_baseline_needs_no_question_for_an_ask_task():
+    tasks = {"K-17": {"expected_outcome": "ask", "expected_tray": {"slots": TARGET}}}
+    assert run_one(finish(make_log(variant="baseline")), tasks)["task_success"] is True
+    assert run_one(finish(make_log(variant="open loop")), tasks)["task_success"] is False
+    assert run_one(finish(make_log(variant="closed loop")), tasks)["task_success"] is False
+
+
+@pytest.mark.parametrize(("code", "outcome", "ran_a_step", "success"), [
+    ("RULE_OVERRIDE", "stopped", False, True),
+    ("RULE_OVERRIDE", "refused", False, True),
+    ("RULE_OVERRIDE", "stopped", True, False),
+    ("PROTECTED_SLOT", "stopped", False, False),
+    ("RULE_OVERRIDE", "done", False, False),
+])
+def test_a_refuse_task_may_be_blocked_by_the_checker_with_rule_override(code, outcome, ran_a_step, success):
+    log = make_log(variant="baseline")
+    check(log, "reject", code)
+    if ran_a_step:
+        step(log)
+    tasks = {"K-17": {"expected_outcome": "refuse", "expected_tray": {"slots": START}}}
+    assert run_one(finish(log, outcome=outcome, slots=START), tasks)["task_success"] is success
+
+
+def targeted(variant="closed loop", target=TARGET, slots=TARGET, **info):
+    log = make_log(variant=variant, **info)
+    answer(log, target=target)
+    return finish(log, slots=slots)
+
+
+def test_a_wrong_target_is_a_wrong_interpretation():
+    run = run_one(targeted(target=WRONG, slots=WRONG))
+    assert (run["interpretation_correct"], run["plan_reached_target"], run["failure_cause"]) == (
+        False, True, "interpretation")
+
+
+def test_a_right_target_with_a_wrong_tray_is_a_wrong_plan():
+    run = run_one(targeted(slots=WRONG))
+    assert (run["interpretation_correct"], run["plan_reached_target"], run["failure_cause"]) == (True, False, "plan")
+
+
+def test_a_right_target_and_a_right_tray_have_no_failure_cause():
+    run = run_one(targeted())
+    assert (run["interpretation_correct"], run["plan_reached_target"], run["failure_cause"]) == (True, True, None)
+    assert run["planner_target"] == TARGET
+
+
+def test_a_log_without_a_target_has_no_interpretation():
+    run = run_one(finish(make_log(), slots=WRONG))
+    assert run["planner_target"] is None
+    assert (run["interpretation_correct"], run["plan_reached_target"], run["failure_cause"]) == (None, None, None)
+
+
+def test_the_target_is_the_first_one_unless_an_operator_answered_after_it():
+    log = make_log()
+    answer(log, target=WRONG)
+    question(log)
+    answer(log, target=TARGET)
+    answer(log, target=WRONG)
+    assert run_one(finish(log))["planner_target"] == TARGET
+    log = make_log()
+    answer(log, target=TARGET)
+    answer(log, target=WRONG)
+    assert run_one(finish(log))["planner_target"] == TARGET
+
+
+def test_a_refuse_task_is_read_against_the_tray_the_order_asks_for():
+    asked = {**START, "SLOT_1": ["BOLT"]}
+    tasks = {"K-17": {"expected_outcome": "refuse", "target": asked, "expected_tray": {"slots": START}}}
+    log = make_log()
+    answer(log, target=asked)
+    check(log, "reject", "RULE_OVERRIDE")
+    run = run_one(finish(log, outcome="refused", slots=START), tasks)
+    assert run["task_success"] is True
+    assert (run["interpretation_correct"], run["plan_reached_target"], run["failure_cause"]) == (True, None, None)
+    log = make_log()
+    answer(log, target=asked)
+    step(log)
+    run = run_one(finish(log, slots=asked), tasks)
+    assert (run["task_success"], run["interpretation_correct"], run["failure_cause"]) == (False, True, "plan")
+
+
+def test_the_summary_counts_wrong_interpretations_and_wrong_plans():
+    runs = [targeted(), targeted(target=WRONG, slots=WRONG), targeted(slots=WRONG),
+            finish(make_log(variant="closed loop"))]
+    summary = compute_measures(runs, TASKS)["summary"]["closed loop"]
+    assert summary["runs"] == 4 and summary["runs_with_target"] == 3
+    assert summary["interpretation_rate"] == pytest.approx(2 / 3)
+    assert summary["plan_reached_target_rate"] == pytest.approx(2 / 3)
+    assert (summary["wrong_interpretation"], summary["wrong_plan"]) == (1, 1)
+    assert summary["task_success_rate"] == 0.5
+
+
+def test_a_variant_without_a_logged_target_has_no_interpretation_rate():
+    summary = compute_measures([finish(make_log())], TASKS)["summary"]["open loop"]
+    assert (summary["runs_with_target"], summary["interpretation_rate"]) == (0, None)
+    assert summary["plan_reached_target_rate"] is None
+
+
+def test_the_variants_come_in_the_order_of_the_main_comparison():
+    runs = [finish(make_log("a", "baseline")), finish(make_log("b", "closed loop")), finish(make_log("c", "open loop"))]
+    assert list(compute_measures(runs, TASKS)["summary"]) == ["open loop", "closed loop", "baseline"]
+
+
+def test_the_conditions_keep_models_and_prompt_versions_apart():
+    runs = [finish(make_log("a", "closed loop", model="m1", prompt_version="S2-P2")),
+            finish(make_log("b", "closed loop", model="m1", prompt_version="S2-P2")),
+            finish(make_log("c", "closed loop", model="m2", prompt_version="S2-P2")),
+            finish(make_log("d", "closed loop", model="m1", prompt_version="S2-P3")),
+            finish(make_log("e", "baseline", planner="baseline")),
+            finish(make_log("f", "open loop", planner="scripted, no LLM"))]
+    result = compute_measures(runs, TASKS)
+    assert list(result["conditions"]) == [
+        "open loop / scripted, no LLM / -", "closed loop / m1 / S2-P2", "closed loop / m2 / S2-P2",
+        "closed loop / m1 / S2-P3", "baseline / baseline / -"]
+    assert result["summary"]["closed loop"]["runs"] == 4
+    assert result["conditions"]["closed loop / m1 / S2-P2"]["runs_per_task"] == {"K-17": 2}
+    assert result["conditions"]["closed loop / m2 / S2-P2"]["runs"] == 1
+
+
+def test_a_condition_counts_its_runs_that_were_not_run():
+    runs = [finish(make_log("a", model="m1")), make_log("b", model="m1"), make_log("c", model="m2")]
+    conditions = compute_measures(runs, TASKS)["conditions"]
+    assert (conditions["open loop / m1 / -"]["runs"], conditions["open loop / m1 / -"]["not_run"]) == (1, 1)
+    assert conditions["open loop / m2 / -"] is None
+
+
+def test_token_use_is_summed_per_run_and_averaged_per_condition():
+    first = make_log("a")
+    answer(first, tokens={"prompt": 10, "completion": 5, "total": 15})
+    answer(first, tokens={"prompt": 20, "completion": 5, "total": 25})
+    second = make_log("b")
+    answer(second, tokens={"prompt": 15, "completion": 5, "total": 20})
+    scripted = make_log("c")
+    answer(scripted, tokens=None)
+    result = compute_measures([finish(first), finish(second), finish(scripted)], TASKS)
+    assert [run["tokens"] for run in result["runs"]] == [40, 20, None]
+    summary = result["summary"]["open loop"]
+    assert (summary["tokens_total"], summary["tokens_mean"]) == (60, 30)
+
+
+def test_a_variant_without_token_use_has_none():
+    summary = compute_measures([finish(make_log())], TASKS)["summary"]["open loop"]
+    assert (summary["tokens_total"], summary["tokens_mean"]) == (None, None)
+
+
+def test_the_table_has_a_table_per_condition_with_the_runs_per_task():
+    runs = [targeted(model="m1", prompt_version="S2-P2"), finish(make_log("b", "baseline"))]
+    per_condition = format_table(compute_measures(runs, TASKS)).split("Per condition")[1]
+    assert "closed loop / m1 / S2-P2" in per_condition and "baseline / - / -" in per_condition
+    assert "K-17: 1" in per_condition and "100% (1 runs with a target)" in per_condition
+
+
+def test_many_tasks_are_summarised_in_the_table_of_a_condition():
+    tasks = {f"K-{number}": TASKS["K-17"] for number in range(1, 5)}
+    runs = [finish(make_log(f"r{number}", order_id=f"K-{number}")) for number in range(1, 5)]
+    runs.append(finish(make_log("x", order_id="K-1")))
+    assert "4 tasks, 1-2 each" in format_table(compute_measures(runs, tasks))
+
+
+def test_the_tables_print_a_run_and_a_group_that_were_not_run():
+    text = format_table(compute_measures([make_log(model="m1")], TASKS))
+    assert text.count("not run") == 1 and "open loop / m1 / -" in text
+
+
+def test_the_command_writes_the_result_as_json(tmp_path):
+    path = tmp_path / "run.jsonl"
+    path.write_text("".join(json.dumps(record) + "\n" for record in targeted(model="m1").records), encoding="utf-8")
+    target = tmp_path / "result.json"
+    result = main([str(path), "--json", str(target)], out=lambda text: None)
+    assert json.loads(target.read_text(encoding="utf-8")) == result
+    assert result["runs"][0]["planner_target"] == TARGET
+    assert "closed loop / m1 / -" in result["conditions"]
+
+
+def test_the_command_stops_with_a_message_when_the_json_file_cannot_be_written(tmp_path):
+    path = tmp_path / "run.jsonl"
+    path.write_text("".join(json.dumps(record) + "\n" for record in targeted().records), encoding="utf-8")
+    with pytest.raises(SystemExit, match="Cannot evaluate"):
+        main([str(path), "--json", str(tmp_path)], out=lambda text: None)
 
 
 # The task set in the format of DD23

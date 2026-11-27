@@ -386,6 +386,19 @@ def test_an_unknown_variant_is_an_error(cell):
         run(cell, "half loop", FakePlanner())
 
 
+def test_the_baseline_runs_its_plan_like_the_open_loop(cell, chapter6_plan):
+    summary, log, _ = run(cell, "baseline", FakePlanner(plan(chapter6_plan)), expected_plan=chapter6_plan,
+                          info={"planner": "baseline"})
+    assert (summary["outcome"], summary["steps_run"], summary["planner_calls"]) == ("done", 9, 1)
+    assert log.of_kind("run_start")[0]["variant"] == "baseline"
+
+
+def test_the_baseline_stops_safely_at_a_failed_step(cell, chapter6_plan):
+    summary, _, _ = run(cell, "baseline", FakePlanner(plan(chapter6_plan)), expected_plan=chapter6_plan,
+                        faults=("pick_failure",))
+    assert summary["outcome"] == "stopped" and summary["planner_calls"] == 1
+
+
 def test_a_provider_limit_repeats_the_whole_run_from_a_fresh_cell(cell, chapter6_plan):
     calls = {"n": 0}
 
