@@ -94,8 +94,11 @@ def tray_shape_problem(target, capability):
     return None
 
 
-def _rule_override(target, state, capability, protected):
-    """The reason when the target itself breaks a rule of the cell, else None (RULE_OVERRIDE)."""
+def rule_override(target, state, capability, protected):
+    """The reason when the target itself breaks a rule of the cell, else None (RULE_OVERRIDE).
+
+    The caller must check the target with tray_shape_problem first.
+    """
     levels = capability["limits"]["levels_per_slot"]
     for slot, parts in target.items():
         if len(parts) > levels:
@@ -138,7 +141,7 @@ def check(plan, state, capability, protected=(), target=None, fixed_target=None)
             changed = [slot for slot in fixed_target if target.get(slot) != fixed_target[slot]]
             return _verdict("reject", None, "TARGET_CHANGED",
                             f"The target of this order is fixed, but this plan changes it for {', '.join(changed)}")
-        forbidden = _rule_override(target, state, capability, protected)
+        forbidden = rule_override(target, state, capability, protected)
         if forbidden:
             return _verdict("reject", None, "RULE_OVERRIDE", forbidden)
     cell = SimulatedCell(capability, state)

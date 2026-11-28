@@ -13,11 +13,13 @@ Study 1, the model tests (353 runs), is finished. Its task set and checker are i
 ```
 config/capability_example.json   example capability file from Design Document Chapter 6
 config/capability_kitting.json   parts and bins of DD24: 2x2 and 2x4 bricks in three colours
+config/example_tasks.json        example DD23 tasks with operator answers and start states
 src/ssm3/                        the system, one module per component (Design Document Chapter 4)
   planner.py                     LLM planner, Task A (Chapter 7)
   checker.py                     checker, Task B (Chapter 8)
   order_check.py                 order check before planning, AMBIGUOUS (DD25)
   baseline.py                    non-LLM baseline, Task C (Chapter 11)
+  orders.py                      DD23 order and task file loader
   orchestrator.py                orchestrator loop (Chapter 9)
   console.py                     operator console (Chapter 9)
   functions.py                   function library: move_to, pick, place, locate, ask_operator (Chapter 5)
