@@ -153,27 +153,22 @@ def _matches(mention, parts, nouns, describing):
     return sorted(part for part in parts if mention.noun in nouns[part] and mention.said <= describing[part])
 
 
-def _settled_by(answers, options, capability, describing):
-    """True when one operator answer narrows the options to exactly one part."""
+def _answer_part(answers, options, describing):
+    """The part uniquely selected by an operator answer, or None."""
     all_words = set().union(*describing.values()) if describing else set()
     for answer in answers:
         named = [part for part in options if part.lower() in normalise(answer)]
         if len(named) == 1:
-            return True
+            return named[0]
         said = set(words(answer)) & all_words
         fitting = [part for part in options if said and said <= describing[part]]
         if len(fitting) == 1:
-            return True
-    return False
+            return fitting[0]
+    return None
 
 
-def find_ambiguity(text, state, capability, answers=None):
-    """Return (mention number, reason) for the first unclear mention in the order, or None when it is clear.
-
-    answers maps a mention number to the operator's answers about that mention, so an answer about one part
-    never settles another. The mention number lets the orchestrator ask once per mention.
-    """
-    answers = answers or {}
+def _ambiguities(text, state, capability):
+    """Yield unclear mentions with their candidate parts and sentence context."""
     nouns, describing = vocabulary(capability)
     present = _parts_in_cell(state) & set(capability["parts"])
     # Each sentence is read on its own, so a destination in one sentence does not change another.
@@ -195,7 +190,50 @@ def find_ambiguity(text, state, capability, answers=None):
         else:
             continue
         options = candidates if len(candidates) > 1 else sorted(present)
-        if _settled_by(answers.get(number, ()), options, capability, describing):
-            continue
-        return number, reason + " Which part is meant?"
+        yield number, reason + " Which part is meant?", options, describing, mention, tokens, slot
+
+
+def find_ambiguity(text, state, capability, answers=None):
+    """Return (mention number, reason) for the first unclear mention, or None.
+
+    Answers are keyed by mention number, so an answer cannot settle another mention.
+    """
+    answers = answers or {}
+    for number, reason, options, describing, _, _, _ in _ambiguities(text, state, capability):
+        if _answer_part(answers.get(number, ()), options, describing) is None:
+            return number, reason
     return None
+
+
+def answer_selection(text, state, capability, number, answer):
+    """Return the selected part, source slot and destination slot for one question.
+
+    Use the same candidates and matching rules as find_ambiguity. For a placement,
+    a named destination after the mention is checked against the structured target.
+    A source slot is not a destination. Stop at a conjunction.
+    """
+    for index, _, options, describing, mention, tokens, source in _ambiguities(text, state, capability):
+        if index != number:
+            continue
+        part = _answer_part([answer], options, describing)
+        slots = {name.lower(): name for name in capability["positions"]["slots"]}
+        destination = None
+        after = tokens[mention.index + 1:]
+        for offset, token in enumerate(after):
+            if token in {"and", "then", "but", "with"}:
+                break
+            if token == "slot" and offset + 1 < len(after):
+                slot = slots.get(f"slot_{after[offset + 1]}")
+                if slot is not None and slot != source:
+                    destination = slot
+                    break
+        # In "replace ... in slot N with [part]", the destination precedes the new part.
+        before = tokens[:mention.index]
+        if destination is None and source is None and "replace" in before and "with" in before:
+            for offset in range(len(before) - 2, -1, -1):
+                if before[offset] == "slot":
+                    destination = slots.get(f"slot_{before[offset + 1]}")
+                    if destination is not None:
+                        break
+        return part, source, destination
+    return None, None, None

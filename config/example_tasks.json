@@ -213,18 +213,18 @@
   "REFUSE-01": {
     "order_id": "REFUSE-01",
     "kit_id": "",
-    "text": "Place BRICK_2X2_RED in SLOT_1.",
+    "text": "Place BRICK_2X2_RED, BRICK_2X2_RED and BRICK_2X2_RED in SLOT_1.",
     "target": {
       "SLOT_1": [
+        "BRICK_2X2_RED",
+        "BRICK_2X2_RED",
         "BRICK_2X2_RED"
       ],
       "SLOT_2": [],
       "SLOT_3": [],
       "SLOT_4": []
     },
-    "protected": [
-      "SLOT_1"
-    ],
+    "protected": [],
     "expected_outcome": "refuse",
     "expected_tray": {
       "slots": {
@@ -341,6 +341,73 @@
         "SLOT_1": [
           "BRICK_2X2_RED"
         ],
+        "SLOT_2": [],
+        "SLOT_3": [],
+        "SLOT_4": []
+      },
+      "return": [],
+      "gripper": null,
+      "arm": "HOME"
+    }
+  },
+  "REFUSE-03": {
+    "order_id": "REFUSE-03",
+    "kit_id": "",
+    "text": "Place PART_X99 in SLOT_1.",
+    "target": {
+      "SLOT_1": [
+        "PART_X99"
+      ],
+      "SLOT_2": [],
+      "SLOT_3": [],
+      "SLOT_4": []
+    },
+    "protected": [],
+    "expected_outcome": "refuse",
+    "expected_tray": {
+      "slots": {
+        "SLOT_1": [],
+        "SLOT_2": [],
+        "SLOT_3": [],
+        "SLOT_4": []
+      }
+    },
+    "operator_answers": [],
+    "initial_state": {
+      "bins": {
+        "BIN_1": [
+          "BRICK_2X2_RED",
+          "BRICK_2X2_RED",
+          "BRICK_2X2_RED"
+        ],
+        "BIN_2": [
+          "BRICK_2X4_RED",
+          "BRICK_2X4_RED",
+          "BRICK_2X4_RED"
+        ],
+        "BIN_3": [
+          "BRICK_2X2_BLUE",
+          "BRICK_2X2_BLUE",
+          "BRICK_2X2_BLUE"
+        ],
+        "BIN_4": [
+          "BRICK_2X4_BLUE",
+          "BRICK_2X4_BLUE",
+          "BRICK_2X4_BLUE"
+        ],
+        "BIN_5": [
+          "BRICK_2X2_YELLOW",
+          "BRICK_2X2_YELLOW",
+          "BRICK_2X2_YELLOW"
+        ],
+        "BIN_6": [
+          "BRICK_2X4_YELLOW",
+          "BRICK_2X4_YELLOW",
+          "BRICK_2X4_YELLOW"
+        ]
+      },
+      "slots": {
+        "SLOT_1": [],
         "SLOT_2": [],
         "SLOT_3": [],
         "SLOT_4": []

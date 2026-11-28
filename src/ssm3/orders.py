@@ -1,10 +1,9 @@
 """Load structured orders and task files (Design Document, DD23).
 
-The flat task format follows the recipe and evaluator branches. The optional
-operator_answers (DD15, DD25) and initial_state (DD23) fields are proposals
-for design review. A caller may instead supply starting states separately.
-Refuse targets are well-formed trays (proposal, DD23 and DD25); they may
-request a change to a protected slot. The checker, not the loader, blocks it.
+The agreed flat format includes operator_answers (DD15, DD25) and a starting
+initial_state (DD23) for each task. A caller may supply starting states separately.
+A refuse target must break a DD25 rule: slot capacity, known parts or protected
+slots. It must still have the correct tray shape. The checker blocks execution.
 Only the plain-language view is passed to the LLM loop (DD23, DD26).
 """
 
@@ -13,11 +12,12 @@ from copy import deepcopy
 from pathlib import Path
 
 from ssm3.cell import level_names
-from ssm3.order_check import find_ambiguity
+from ssm3.checker import rule_override, tray_shape_problem
+from ssm3.order_check import answer_selection, find_ambiguity
 
 ORDER_FIELDS = ('order_id', 'kit_id', 'text', 'target', 'protected')
 TASK_FIELDS = (*ORDER_FIELDS, 'expected_outcome', 'expected_tray')
-PROPOSED_FIELDS = ('operator_answers', 'initial_state')
+ADDITIONAL_FIELDS = ('operator_answers', 'initial_state')
 
 
 def _require(condition, message):
@@ -39,8 +39,12 @@ def _tray(tray, capability, label):
         _parts(parts, capability, f'{label}.{slot}', len(level_names(capability)))
 
 
-def validate_order(order, capability, recipes=None):
-    """Validate the five DD23 fields; accept a target, a kit ID or both."""
+def validate_order(order, capability, recipes=None, *, allow_rule_override=False):
+    """Validate the five DD23 fields; accept a target, a kit ID or both.
+
+    Only refuse tasks may opt into a shape-only requested target check. Recipes,
+    expected trays and starting states always contain known parts within capacity.
+    """
     _require(isinstance(order, dict), 'order must be an object')
     _require(set(order) <= set(ORDER_FIELDS), 'unknown order field')
     _require(set(ORDER_FIELDS) <= set(order), 'missing DD23 order field')
@@ -58,7 +62,11 @@ def validate_order(order, capability, recipes=None):
     _require(isinstance(target, dict), 'target must be an object')
     _require(bool(target or kit_id), 'a structured order needs a kit_id or a target (DD23)')
     if target:
-        _tray(target, capability, 'target')
+        if allow_rule_override:
+            shape = tray_shape_problem(target, capability)
+            _require(shape is None, f'target: {shape}')
+        else:
+            _tray(target, capability, 'target')
     if kit_id:
         _require(recipes is not None, f'kit_id {kit_id!r} needs a recipe table')
         _require(isinstance(recipes, dict) and kit_id in recipes, f'unknown kit_id {kit_id!r} in recipe table')
@@ -101,7 +109,7 @@ def baseline_order(task):
 
 
 def evaluator_task(task):
-    """Return the evaluator branch's seven fields, without proposed metadata."""
+    """Return the evaluator branch's seven fields, without runner metadata."""
     return deepcopy({key: task[key] for key in TASK_FIELDS})
 
 
@@ -122,8 +130,12 @@ def _validate_state(state, capability):
              'unknown arm position')
 
 
-def validate_outcome(task, state, capability):
-    """Check the text and answers using the same order check as the orchestrator."""
+def validate_outcome(task, state, capability, target=None):
+    """Check the text and answers using the same order check as the orchestrator.
+
+    The resolved part must agree with the named slot in the structured target.
+    This is a consistency check, not a full interpretation of the instruction.
+    """
     answers = task.get('operator_answers', [])
     outcome = task['expected_outcome']
     unclear = find_ambiguity(task['text'], state, capability, {})
@@ -131,11 +143,26 @@ def validate_outcome(task, state, capability):
         _require(unclear is None, f'{outcome} task is ambiguous: {unclear}')
         return
     _require(unclear is not None, 'ask task does not trigger an ambiguity question')
+    target = task['target'] if target is None else target
     supplied = {}
     for answer in answers:
         _require(unclear is not None, 'unused operator answer')
         number = unclear[0]
         _require(number not in supplied, 'operator answer did not settle the question')
+        part, source, destination = answer_selection(task['text'], state, capability, number, answer)
+        _require(part is not None, 'operator answer did not settle the question')
+        if destination is not None:
+            agrees = part in target[destination]
+        elif source is not None:
+            agrees = True  # A removal is checked against the source below.
+        else:
+            # If the text names no slot, only a changed slot (or a no-op tray) can
+            # support the answer. An unrelated unchanged slot is not evidence.
+            changed = [slot for slot in target if target[slot] != state['slots'][slot]]
+            agrees = any(part in target[slot] for slot in changed or target)
+        if source is not None:
+            agrees = agrees and state['slots'][source].count(part) > target[source].count(part)
+        _require(agrees, f'operator answer {answer!r} selects {part}, which contradicts the target')
         supplied[number] = [answer]
         unclear = find_ambiguity(task['text'], state, capability, supplied)
         _require(unclear is None or unclear[0] != number, 'operator answer did not settle the question')
@@ -143,14 +170,15 @@ def validate_outcome(task, state, capability):
 
 
 def validate_task(task, capability, recipes=None, initial_state=None):
-    """Validate DD23 task fields, and check outcomes when a start state is supplied."""
+    """Validate DD23 task fields and outcomes against a required starting state."""
     _require(isinstance(task, dict), 'task must be an object')
     _require(set(TASK_FIELDS) <= set(task), 'missing DD23 task field')
-    _require(set(task) <= set((*TASK_FIELDS, *PROPOSED_FIELDS)), 'unknown task field')
-    order = validate_order({key: task[key] for key in ORDER_FIELDS}, capability, recipes)
-    target = order['target'] or recipes[order['kit_id']]
+    _require(set(task) <= set((*TASK_FIELDS, *ADDITIONAL_FIELDS)), 'unknown task field')
     outcome = task['expected_outcome']
     _require(outcome in ('done', 'ask', 'refuse'), 'unknown expected_outcome')
+    order = validate_order({key: task[key] for key in ORDER_FIELDS}, capability, recipes,
+                           allow_rule_override=outcome == 'refuse')
+    target = order['target'] or recipes[order['kit_id']]
     tray = task['expected_tray']
     _require(isinstance(tray, dict) and 'slots' in tray and set(tray) <= {'slots', 'return'},
              'expected_tray needs slots and may include return')
@@ -170,17 +198,19 @@ def validate_task(task, capability, recipes=None, initial_state=None):
     if 'initial_state' in task:
         _require(task['initial_state'] is not None, 'initial_state must be an object')
     state = task.get('initial_state', initial_state)
-    if state is not None:
-        _validate_state(state, capability)
-        for slot in order['protected']:
-            _require(tray['slots'][slot] == state['slots'][slot], f'expected result changes protected slot {slot}')
-        if outcome == 'refuse':
-            _require(tray['slots'] == state['slots'], 'refuse task must leave tray unchanged')
-            if 'return' in tray:
-                _require(tray['return'] == state['return'], 'refuse task must leave return unchanged')
-        validate_outcome(task, state, capability)
-    elif outcome == 'ask':
-        raise ValueError('ask task needs a starting state to check its answers')
+    _require(state is not None, 'every task needs a starting state to check its outcome')
+    _validate_state(state, capability)
+    for slot in order['protected']:
+        _require(tray['slots'][slot] == state['slots'][slot], f'expected result changes protected slot {slot}')
+    violation = rule_override(target, state, capability, order['protected'])
+    if outcome == 'refuse':
+        _require(violation is not None, 'refuse target must break a RULE_OVERRIDE rule (DD25)')
+        _require(tray['slots'] == state['slots'], 'refuse task must leave tray unchanged')
+        if 'return' in tray:
+            _require(tray['return'] == state['return'], 'refuse task must leave return unchanged')
+    else:
+        _require(violation is None, f'{outcome} target breaks a rule: {violation}')
+    validate_outcome(task, state, capability, target)
     return task
 
 
